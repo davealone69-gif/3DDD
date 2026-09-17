@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">3Double D</string>
+    <string name="tab_studio">Studio</string>
+    <string name="tab_library">Library</string>
+    <string name="tab_material">Material</string>
+    <string name="tab_motion">Motion</string>
+    <string name="tab_export">Export</string>
+
+    <string name="studio_title">Avatar Studio</string>
+    <string name="studio_subtitle">Photoreal 3D avatar designer</string>
+    <string name="action_import">Import model</string>
+    <string name="action_scan">Scan</string>
+    <string name="action_save">Save avatar</string>
+    <string name="action_reset">Reset</string>
+
+    <string name="library_title">Model Library</string>
+    <string name="library_builtin">Built-in</string>
+    <string name="library_imported">Imported</string>
+    <string name="library_scanned">Scanned</string>
+
+    <string name="material_title">Material Editor</string>
+    <string name="material_base_color">Base colour</string>
+    <string name="material_metallic">Metallic</string>
+    <string name="material_roughness">Roughness</string>
+    <string name="material_reflectance">Reflectance</string>
+    <string name="material_emissive">Emissive</string>
+    <string name="material_clearcoat">Clear coat</string>
+
+    <string name="motion_title">Motion &amp; Animation</string>
+    <string name="motion_play">Play</string>
+    <string name="motion_pause">Pause</string>
+    <string name="motion_stop">Stop</string>
+    <string name="motion_speed">Speed</string>
+    <string name="motion_loop">Loop</string>
+
+    <string name="lighting_title">Lighting</string>
+    <string name="lighting_intensity">Environment intensity</string>
+    <string name="lighting_key">Key light</string>
+    <string name="lighting_fill">Fill light</string>
+    <string name="lighting_rim">Rim light</string>
+
+    <string name="export_title">Export</string>
+    <string name="export_png">PNG still</string>
+    <string name="export_glb">glTF binary (.glb)</string>
+    <string name="export_mp4">Turntable MP4</string>
+    <string name="export_gif">Turntable GIF</string>
+    <string name="export_progress">Exporting…</string>
+
+    <string name="scan_title">Scan to avatar</string>
+    <string name="scan_hint">Capture 8–24 frames around the subject</string>
+    <string name="scan_capture">Capture frame</string>
+    <string name="scan_build">Build avatar</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_quality">Render quality</string>
+    <string name="settings_audio">Audio</string>
+    <string name="settings_audio_music">Ambient music</string>
+    <string name="settings_audio_sfx">Interface sounds</string>
+    <string name="settings_audio_volume">Volume</string>
+
+    <string name="age_title">Age verification</string>
+    <string name="age_body">This module contains mature content and is restricted to adults aged 18 and over. Confirm your date of birth to continue.</string>
+    <string name="age_dob">Date of birth (YYYY-MM-DD)</string>
+    <string name="age_confirm">Confirm and unlock</string>
+    <string name="age_denied">Access denied — you must be 18 or older.</string>
+    <string name="age_unlocked">Mature content unlocked.</string>
+    <string name="age_content_title">Mature content studio</string>
+    <string name="age_lock">Lock module</string>
+
+    <string name="about_title">About</string>
+    <string name="about_body">3Double D is a photorealistic avatar design studio built with Jetpack Compose and Google Filament.</string>
+
+    <string name="error_no_model">No model loaded.</string>
+    <string name="error_import">Could not import that file.</string>
+    <string name="error_export">Export failed.</string>
+    <string name="error_camera">Camera permission is required to scan.</string>
+    <string name="error_mic">Microphone permission is required for vocal capture.</string>
+    <string name="cd_viewport">3D viewport</string>
+    <string name="cd_back">Back</string>
+</resources>

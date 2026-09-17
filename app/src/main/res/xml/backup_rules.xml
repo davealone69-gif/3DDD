@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include domain="database" path="." />
+    <include domain="sharedpref" path="." />
+    <include domain="file" path="models/" />
+    <include domain="file" path="scans/" />
+    <exclude domain="file" path="exports/" />
+    <exclude domain="file" path="audio/" />
+</full-backup-content>

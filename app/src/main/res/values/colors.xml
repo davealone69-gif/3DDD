@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ink">#FF05060B</color>
+    <color name="surface">#FF0B0F1A</color>
+    <color name="neon_cyan">#FF22E4FF</color>
+    <color name="neon_magenta">#FFFF2BD6</color>
+    <color name="neon_amber">#FFFFC24B</color>
+    <color name="ic_launcher_background">#FF05060B</color>
+</resources>
