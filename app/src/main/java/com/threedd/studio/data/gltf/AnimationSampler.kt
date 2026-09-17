@@ -52,10 +52,12 @@ object AnimationSampler {
         if (channel.interpolation == GltfDocument.INTERP_CUBICSPLINE) {
             val out = FloatArray(components)
             for (c in 0 until components) {
+                // Each key stores (in-tangent, value, out-tangent). Segment [low, high] uses
+                // the OUT tangent of `low` and the IN tangent of `high`.
                 val p0 = values.getOrElse(low * stride + components + c) { 0f }
-                val m0 = values.getOrElse(low * stride + c) { 0f } * span
+                val m0 = values.getOrElse(low * stride + 2 * components + c) { 0f } * span
                 val p1 = values.getOrElse(high * stride + components + c) { 0f }
-                val m1 = values.getOrElse(high * stride + 2 * components + c) { 0f } * span
+                val m1 = values.getOrElse(high * stride + c) { 0f } * span
                 val u2 = u * u
                 val u3 = u2 * u
                 out[c] = (2f * u3 - 3f * u2 + 1f) * p0 +
