@@ -4,7 +4,7 @@ package com.threedd.studio.data.model
  * Built-in preset tables.
  *
  * Morph-target names match the targets baked into the generated base models
- * (assets/models/*.glb): muscle, weight, height, shoulder_width, hip_width,
+ * (the .glb files under assets/models): muscle, weight, height, shoulder_width, hip_width,
  * bust, limb_length. Theme families drive material + accent geometry rather
  * than morphs, because that is where the visual difference actually lives.
  */
