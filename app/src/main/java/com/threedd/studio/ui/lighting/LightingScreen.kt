@@ -54,19 +54,19 @@ fun LightingScreen(viewModel: StudioViewModel = sessionViewModel<StudioViewModel
             SectionTitle("Rigs")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(Presets.lightPresets.keys.toList()) { name ->
-                    PresetChip(name, selected = false) { viewModel.applyLightPreset(name) }
+                    PresetChip(name, selected = false, onClick = { viewModel.applyLightPreset(name) })
                 }
             }
 
             SectionTitle("Environment")
-            LabeledSlider("Indirect light intensity", light.environmentIntensity, 0f..80_000f) {
+            LabeledSlider("Indirect light intensity", light.environmentIntensity, 0f..80_000f, onValueChange = {
                 viewModel.updateLight(light.copy(environmentIntensity = it))
-            }
+            })
 
             SectionTitle("Key light")
-            LabeledSlider("Intensity", light.keyIntensity, 0f..250_000f) {
+            LabeledSlider("Intensity", light.keyIntensity, 0f..250_000f, onValueChange = {
                 viewModel.updateLight(light.copy(keyIntensity = it))
-            }
+            })
             OutlinedTextField(
                 value = light.keyColorHex,
                 onValueChange = { viewModel.updateLight(light.copy(keyColorHex = it)) },
@@ -76,9 +76,9 @@ fun LightingScreen(viewModel: StudioViewModel = sessionViewModel<StudioViewModel
             )
 
             SectionTitle("Fill light")
-            LabeledSlider("Intensity", light.fillIntensity, 0f..150_000f) {
+            LabeledSlider("Intensity", light.fillIntensity, 0f..150_000f, onValueChange = {
                 viewModel.updateLight(light.copy(fillIntensity = it))
-            }
+            })
             OutlinedTextField(
                 value = light.fillColorHex,
                 onValueChange = { viewModel.updateLight(light.copy(fillColorHex = it)) },
@@ -88,9 +88,9 @@ fun LightingScreen(viewModel: StudioViewModel = sessionViewModel<StudioViewModel
             )
 
             SectionTitle("Rim light")
-            LabeledSlider("Intensity", light.rimIntensity, 0f..250_000f) {
+            LabeledSlider("Intensity", light.rimIntensity, 0f..250_000f, onValueChange = {
                 viewModel.updateLight(light.copy(rimIntensity = it))
-            }
+            })
             OutlinedTextField(
                 value = light.rimColorHex,
                 onValueChange = { viewModel.updateLight(light.copy(rimColorHex = it)) },

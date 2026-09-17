@@ -78,7 +78,7 @@ class GifEncoder(
             }
         }
         if (sample.isEmpty()) return IntArray(maxColors) { it * 0x010101 }
-        val boxes = mutableListOf(sample)
+        val boxes: MutableList<List<Int>> = mutableListOf(sample)
         while (boxes.size < maxColors) {
             val target = boxes.maxByOrNull { box -> channelRange(box) } ?: break
             if (target.size < 2 || channelRange(target) == 0) break

@@ -101,6 +101,7 @@ class VisualHull(
                         if (occupied(ix + dir[0], iy + dir[1], iz + dir[2])) return@forEach
                         val nx = dir[0].toFloat(); val ny = dir[1].toFloat(); val nz = dir[2].toFloat()
                         val hx = sizeX / 2; val hy = sizeY / 2; val hz = sizeZ / 2
+                        val base = positions.size / 3
                         val quad = if (dir[0] != 0) arrayOf(
                             floatArrayOf(cx + hx * nx, cy - hy, cz - hz),
                             floatArrayOf(cx + hx * nx, cy - hy, cz + hz),

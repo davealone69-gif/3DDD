@@ -66,7 +66,7 @@ class StudioRenderer(private val context: Context) {
                 swapChain = engine.createSwapChain(surface)
             }
 
-            override fun onDetachedFromWindow() {
+            override fun onDetachedFromSurface() {
                 swapChain?.let { engine.destroySwapChain(it) }
                 swapChain = null
                 engine.flushAndWait()

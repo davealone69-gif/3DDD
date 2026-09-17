@@ -34,8 +34,9 @@ class MaterialFactory(private val engine: Engine) {
             .material(FRAGMENT_SOURCE)
             .build(engine)
 
-        check(packageResult.isValid) { "studioPbr material failed to compile" }
-        val material = Material.Builder().payload(packageResult.data).build(engine)
+        val payload = packageResult.buffer
+        check(payload.capacity() > 0) { "studioPbr material failed to compile" }
+        val material = Material.Builder().payload(payload).build(engine)
         pbrMaterial = material
         return material
     }

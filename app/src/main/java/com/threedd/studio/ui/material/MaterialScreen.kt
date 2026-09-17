@@ -59,7 +59,7 @@ fun MaterialScreen(viewModel: StudioViewModel = sessionViewModel<StudioViewModel
             SectionTitle("Presets")
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(Presets.materialPresets.keys.toList()) { name ->
-                    PresetChip(name, selected = false) { viewModel.applyMaterialPreset(name) }
+                    PresetChip(name, selected = false, onClick = { viewModel.applyMaterialPreset(name) })
                 }
             }
 
@@ -96,24 +96,24 @@ fun MaterialScreen(viewModel: StudioViewModel = sessionViewModel<StudioViewModel
             )
 
             SectionTitle("Surface")
-            LabeledSlider("Metallic", material.metallic, 0f..1f) {
+            LabeledSlider("Metallic", material.metallic, 0f..1f, onValueChange = {
                 viewModel.updateMaterial(material.copy(metallic = it))
-            }
-            LabeledSlider("Roughness", material.roughness, 0.02f..1f) {
+            })
+            LabeledSlider("Roughness", material.roughness, 0.02f..1f, onValueChange = {
                 viewModel.updateMaterial(material.copy(roughness = it))
-            }
-            LabeledSlider("Reflectance", material.reflectance, 0f..1f) {
+            })
+            LabeledSlider("Reflectance", material.reflectance, 0f..1f, onValueChange = {
                 viewModel.updateMaterial(material.copy(reflectance = it))
-            }
-            LabeledSlider("Emissive intensity", material.emissiveIntensity, 0f..12f) {
+            })
+            LabeledSlider("Emissive intensity", material.emissiveIntensity, 0f..12f, onValueChange = {
                 viewModel.updateMaterial(material.copy(emissiveIntensity = it))
-            }
-            LabeledSlider("Clear coat", material.clearCoat, 0f..1f) {
+            })
+            LabeledSlider("Clear coat", material.clearCoat, 0f..1f, onValueChange = {
                 viewModel.updateMaterial(material.copy(clearCoat = it))
-            }
-            LabeledSlider("Clear coat roughness", material.clearCoatRoughness, 0.02f..1f) {
+            })
+            LabeledSlider("Clear coat roughness", material.clearCoatRoughness, 0.02f..1f, onValueChange = {
                 viewModel.updateMaterial(material.copy(clearCoatRoughness = it))
-            }
+            })
             Text(
                 "",
                 modifier = Modifier.padding(bottom = 24.dp)

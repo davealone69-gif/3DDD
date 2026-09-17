@@ -15,6 +15,8 @@ import com.threedd.studio.data.model.MaterialState
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.abs
+import kotlin.math.sqrt
 
 /**
  * Turns parsed glTF geometry into Filament renderables.
@@ -85,31 +87,26 @@ class ModelLoader(
 
     private fun buildPiece(primitive: GltfDocument.Primitive): Piece? {
         val vertexCount = primitive.vertexCount
-        val bufferCount = 1 +
-            (if (primitive.normals != null) 1 else 0) +
-            (if (primitive.uvs != null) 1 else 0) +
-            (if (primitive.colors != null) 1 else 0)
+        // Filament has no NORMAL attribute: the tangent frame (tangent, bitangent, normal)
+        // is encoded as a quaternion in TANGENTS. We always supply it.
+        val normals = primitive.normals ?: computeNormals(primitive.positions, primitive.indices)
+        val tangents = packTangents(normals)
 
         val builder = VertexBuffer.Builder()
             .vertexCount(vertexCount)
-            .bufferCount(bufferCount)
+            .bufferCount(2 + (if (primitive.uvs != null) 1 else 0) + (if (primitive.colors != null) 1 else 0))
             .attribute(
                 VertexBuffer.VertexAttribute.POSITION, 0,
                 VertexBuffer.AttributeType.FLOAT3, 0, 0
             )
+            .attribute(
+                VertexBuffer.VertexAttribute.TANGENTS, 1,
+                VertexBuffer.AttributeType.FLOAT4, 0, 0
+            )
 
-        var index = 1
-        var normalIndex = -1
+        var index = 2
         var uvIndex = -1
         var colorIndex = -1
-        if (primitive.normals != null) {
-            normalIndex = index
-            builder.attribute(
-                VertexBuffer.VertexAttribute.NORMAL, index,
-                VertexBuffer.AttributeType.FLOAT3, 0, 0
-            )
-            index++
-        }
         if (primitive.uvs != null) {
             uvIndex = index
             builder.attribute(
@@ -128,9 +125,7 @@ class ModelLoader(
 
         val vertexBuffer = builder.build(engine)
         vertexBuffer.setBufferAt(engine, 0, floats(primitive.positions))
-        if (normalIndex >= 0) {
-            vertexBuffer.setBufferAt(engine, normalIndex, floats(primitive.normals!!))
-        }
+        vertexBuffer.setBufferAt(engine, 1, floats(tangents))
         if (uvIndex >= 0) {
             vertexBuffer.setBufferAt(engine, uvIndex, floats(primitive.uvs!!))
         }
@@ -225,6 +220,119 @@ class ModelLoader(
     fun destroy() = unload()
 
     // ---- helpers ----
+
+    /** Area-weighted vertex normals, used when an asset does not carry NORMAL. */
+    private fun computeNormals(positions: FloatArray, indices: IntArray): FloatArray {
+        val out = FloatArray(positions.size)
+        var i = 0
+        while (i + 2 < indices.size) {
+            val a = indices[i] * 3
+            val b = indices[i + 1] * 3
+            val c = indices[i + 2] * 3
+            if (a + 2 < positions.size && b + 2 < positions.size && c + 2 < positions.size) {
+                val e1x = positions[b] - positions[a]
+                val e1y = positions[b + 1] - positions[a + 1]
+                val e1z = positions[b + 2] - positions[a + 2]
+                val e2x = positions[c] - positions[a]
+                val e2y = positions[c + 1] - positions[a + 1]
+                val e2z = positions[c + 2] - positions[a + 2]
+                val nx = e1y * e2z - e1z * e2y
+                val ny = e1z * e2x - e1x * e2z
+                val nz = e1x * e2y - e1y * e2x
+                out[a] += nx; out[a + 1] += ny; out[a + 2] += nz
+                out[b] += nx; out[b + 1] += ny; out[b + 2] += nz
+                out[c] += nx; out[c + 1] += ny; out[c + 2] += nz
+            }
+            i += 3
+        }
+        return out
+    }
+
+    /**
+     * Encodes vertex normals as the quaternion Filament decodes in common_math.glsl:
+     *   n = (0,0,1) + (2,-2,-2)qx(qz,qw,qx) + (2,2,-2)qy(qw,qz,qy)
+     * which is the third column of the rotation matrix built from the quaternion. We build an
+     * arbitrary orthonormal basis (T, B, N) and convert that matrix to a quaternion, so the
+     * decoded normal is exactly N. The tangent/bitangent directions are irrelevant here
+     * because the studio material uses neither anisotropy nor normal maps.
+     */
+    private fun packTangents(normals: FloatArray): FloatArray {
+        val count = normals.size / 3
+        val out = FloatArray(count * 4)
+        for (i in 0 until count) {
+            var nx = normals[i * 3]
+            var ny = normals[i * 3 + 1]
+            var nz = normals[i * 3 + 2]
+            val length = sqrt(nx * nx + ny * ny + nz * nz)
+            if (length < 1e-6f) {
+                nx = 0f; ny = 0f; nz = 1f
+            } else {
+                nx /= length; ny /= length; nz /= length
+            }
+
+            val useX = abs(nx) < 0.9f
+            val rx = if (useX) 1f else 0f
+            val ry = if (useX) 0f else 1f
+
+            var tx = ry * nz
+            var ty = -rx * nz
+            var tz = rx * ny - ry * nx
+            val tl = sqrt(tx * tx + ty * ty + tz * tz)
+            if (tl < 1e-6f) {
+                tx = 1f; ty = 0f; tz = 0f
+            } else {
+                tx /= tl; ty /= tl; tz /= tl
+            }
+
+            val bx = ny * tz - nz * ty
+            val by = nz * tx - nx * tz
+            val bz = nx * ty - ny * tx
+
+            val m00 = tx; val m10 = ty; val m20 = tz
+            val m01 = bx; val m11 = by; val m21 = bz
+            val m02 = nx; val m12 = ny; val m22 = nz
+
+            val trace = m00 + m11 + m22
+            var qx: Float
+            var qy: Float
+            var qz: Float
+            var qw: Float
+            when {
+                trace > 0f -> {
+                    val s = sqrt(trace + 1f) * 2f
+                    qw = 0.25f * s
+                    qx = (m21 - m12) / s
+                    qy = (m02 - m20) / s
+                    qz = (m10 - m01) / s
+                }
+                m00 > m11 && m00 > m22 -> {
+                    val s = sqrt(1f + m00 - m11 - m22) * 2f
+                    qw = (m21 - m12) / s
+                    qx = 0.25f * s
+                    qy = (m01 + m10) / s
+                    qz = (m02 + m20) / s
+                }
+                m11 > m22 -> {
+                    val s = sqrt(1f + m11 - m00 - m22) * 2f
+                    qw = (m02 - m20) / s
+                    qx = (m01 + m10) / s
+                    qy = 0.25f * s
+                    qz = (m12 + m21) / s
+                }
+                else -> {
+                    val s = sqrt(1f + m22 - m00 - m11) * 2f
+                    qw = (m10 - m01) / s
+                    qx = (m02 + m20) / s
+                    qy = (m12 + m21) / s
+                    qz = 0.25f * s
+                }
+            }
+            if (qw < 0f) { qx = -qx; qy = -qy; qz = -qz; qw = -qw }
+            out[i * 4] = qx; out[i * 4 + 1] = qy; out[i * 4 + 2] = qz; out[i * 4 + 3] = qw
+        }
+        return out
+    }
+
 
     private fun boundsOf(values: FloatArray, componentOffset: Int, stride: Int): FloatArray {
         if (values.isEmpty()) return floatArrayOf(0f, 0f, 0f)
