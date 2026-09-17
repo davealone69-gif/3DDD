@@ -103,7 +103,7 @@ class LocalModelLauncher @Inject constructor(@ApplicationContext private val con
             detail = "Launching ${binary.name} with ${model.name}"
         )
 
-        val failure = runCatching {
+        val failure: Result<Unit> = runCatching {
             val builder = ProcessBuilder(
                 binary.absolutePath,
                 "-m", model.absolutePath,
@@ -112,12 +112,10 @@ class LocalModelLauncher @Inject constructor(@ApplicationContext private val con
             )
             builder.redirectErrorStream(true)
             builder.directory(context.filesDir)
-            val started = builder.start()
-            process = started
-            started.pid()
+            process = builder.start()
         }
 
-        failure.onFailure { error ->
+        failure.onFailure { error: Throwable ->
             val blocked = error is SecurityException ||
                 (error.message?.contains("permission", true) == true) ||
                 (error.message?.contains("exec", true) == true)
@@ -138,7 +136,6 @@ class LocalModelLauncher @Inject constructor(@ApplicationContext private val con
             if (healthy(_status.value.endpoint)) {
                 _status.value = _status.value.copy(
                     phase = Phase.RUNNING,
-                    pid = process?.pid(),
                     detail = "Local model server running on ${_status.value.endpoint}"
                 )
                 return@withContext _status.value
@@ -154,7 +151,7 @@ class LocalModelLauncher @Inject constructor(@ApplicationContext private val con
     fun stop(): Status {
         runCatching { process?.destroy() }
         process = null
-        _status.value = _status.value.copy(phase = Phase.STOPPED, detail = "Server stopped", pid = null)
+        _status.value = _status.value.copy(phase = Phase.STOPPED, detail = "Server stopped")
         return _status.value
     }
 
