@@ -136,6 +136,7 @@ fun ScanScreen(viewModel: ScanViewModel = hiltViewModel()) {
             ) {
                 Button(
                     onClick = {
+                        viewModel.onCaptureStarted()
                         val session = viewModel.ensureSession()
                         val index = state.frames.size
                         val file = java.io.File(session, "frame-%03d.jpg".format(index))

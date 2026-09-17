@@ -54,6 +54,21 @@ fun SettingsScreen(
         ) {
             StatusBanner(message = message, modifier = Modifier.padding(top = 16.dp), onDismiss = viewModel::consumeMessage)
 
+            SectionTitle("3D engine")
+            val engine = viewModel.engineInfo
+            Text("Graphics backend: ${engine.backend}", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                if (engine.materialDegraded) "PBR shader: simplified fallback in use"
+                else "PBR shader: compiled",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (engine.materialDegraded) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.primary
+            )
+            engine.lastLoadError?.let {
+                Text("Last load error: $it", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error)
+            }
+
             SectionTitle("Render quality")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 QualityPreset.entries.forEach { preset ->

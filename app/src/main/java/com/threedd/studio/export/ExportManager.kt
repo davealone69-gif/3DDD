@@ -187,8 +187,21 @@ class ExportManager(private val context: Context) {
         file
     }
 
+    /**
+     * Resolves a bakeable source file. Packaged assets are copied out of the APK first, so
+     * built-in rigs can be re-exported with their morph weights applied just like imports.
+     */
     private fun sourceFileFor(model: AvatarModel): File? {
-        if (model.isAsset) return null // built-ins are baked at generation time, nothing to write back
+        if (model.isAsset) {
+            val assetPath = model.location.removePrefix("models/")
+            val target = File(context.cacheDir, "bake-" + assetPath.replace('/', '_'))
+            return runCatching {
+                context.assets.open("models/$assetPath").use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                }
+                target.takeIf { it.length() > 0 }
+            }.getOrNull()
+        }
         val path = model.toUri().path ?: return null
         return File(path).takeIf { it.exists() }
     }

@@ -47,13 +47,15 @@ class ScanViewModel @Inject constructor(
         return created
     }
 
+    fun onCaptureStarted() = _state.update { it.copy(capturing = true) }
+
     fun onFrameCaptured(file: File) {
-        _state.update { it.copy(frames = it.frames + file) }
+        _state.update { it.copy(capturing = false, frames = it.frames + file) }
         audio.play(AudioEngine.Cue.TAP)
     }
 
     fun captureFailed(reason: String) {
-        _state.update { it.copy(error = reason) }
+        _state.update { it.copy(capturing = false, error = reason) }
         audio.play(AudioEngine.Cue.ERROR)
     }
 

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Palette
@@ -101,6 +102,8 @@ private enum class StudioCategory(val label: String, val icon: ImageVector) {
     FACE("Face", Icons.Filled.Face),
     EYES("Eyes", Icons.Filled.RemoveRedEye),
     BODY("Body", Icons.Filled.Accessibility),
+    MATERIAL("Material", Icons.Filled.Tune),
+    LIGHT("Light", Icons.Filled.LightMode),
     CLOTHING("Clothing", Icons.Filled.Checkroom),
     ACCESSORIES("Accessories", Icons.Filled.Diamond),
     AUGMENTS("Augments", Icons.Filled.Bolt),
@@ -229,9 +232,10 @@ fun StudioScreen(
                     }
 
                     Column(Modifier.align(Alignment.TopStart).padding(8.dp)) {
-                        AssistChip(onClick = {}, label = {
-                            Text(state.model?.displayName ?: "No model loaded")
-                        })
+                        AssistChip(
+                            onClick = onOpenLibrary,
+                            label = { Text(state.model?.displayName ?: "No model — tap to open the library") }
+                        )
                         if (state.loading) {
                             Text("Building scene…", style = MaterialTheme.typography.labelSmall, color = NeonCyan,
                                 modifier = Modifier.padding(top = 4.dp))
@@ -385,6 +389,8 @@ private fun InspectorPanel(
             StudioCategory.FACE -> FacePanel(state, viewModel)
             StudioCategory.EYES -> EyesPanel(state, viewModel)
             StudioCategory.BODY -> BodyPanel(state, viewModel)
+            StudioCategory.MATERIAL -> MaterialPanel(state, viewModel)
+            StudioCategory.LIGHT -> LightPanel(state, viewModel, onOpenLighting)
             StudioCategory.CLOTHING -> ClothingPanel(state, viewModel)
             StudioCategory.ACCESSORIES -> AccessoriesPanel(state, viewModel)
             StudioCategory.AUGMENTS -> AugmentsPanel(state, viewModel)
@@ -525,6 +531,33 @@ private fun MotionPanel(state: StudioUiState, viewModel: StudioViewModel) {
         }
     }
     LabeledSlider("Speed", state.speed, 0.1f..3f, onValueChange = viewModel::setSpeed) { "%.2fx".format(it) }
+
+    SectionTitle("Voice")
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (state.recording) {
+            Button(onClick = viewModel::stopVocalRecording) {
+                Icon(Icons.Filled.Stop, null); Text("  Stop recording")
+            }
+        } else {
+            Button(onClick = { viewModel.refreshVocals(); viewModel.startVocalRecording() }) {
+                Icon(Icons.Filled.Mic, null); Text("  Record a take")
+            }
+        }
+    }
+    if (state.vocals.isEmpty()) {
+        Text("No takes yet.", color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+    } else {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            items(state.vocals) { sample ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(sample.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { viewModel.playVocal(sample, 0f) }) { Text("Play") }
+                    TextButton(onClick = { viewModel.playVocal(sample, 4f) }) { Text("+4") }
+                    TextButton(onClick = { viewModel.playVocal(sample, -4f) }) { Text("-4") }
+                }
+            }
+        }
+    }
 
     SectionTitle("Clips")
     if (state.animations.isEmpty()) {

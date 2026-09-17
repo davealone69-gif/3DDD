@@ -3,6 +3,7 @@ package com.threedd.studio.ui.studio
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.threedd.studio.audio.AudioEngine
+import com.threedd.studio.audio.VocalBank
 import com.threedd.studio.content.AgeGate
 import com.threedd.studio.data.avatar.AppearanceSpec
 import com.threedd.studio.data.model.AnimationClip
@@ -41,6 +42,8 @@ data class StudioUiState(
     val overrideModelMaterials: Boolean = true,
     val morphNames: List<String> = emptyList(),
     val appearance: AppearanceSpec = AppearanceSpec(),
+    val recording: Boolean = false,
+    val vocals: List<VocalBank.Sample> = emptyList(),
     val matureUnlocked: Boolean = false,
     val loading: Boolean = false,
     val status: String? = null,
@@ -54,6 +57,7 @@ class StudioViewModel @Inject constructor(
     private val settings: SettingsStore,
     val renderer: StudioRenderer,
     private val audio: AudioEngine,
+    private val vocalBank: VocalBank,
     private val ageGate: AgeGate
 ) : ViewModel() {
 
@@ -173,6 +177,36 @@ class StudioViewModel @Inject constructor(
     fun resetCamera() {
         renderer.resetFraming()
         audio.play(AudioEngine.Cue.TAP)
+    }
+
+    // ---- vocal takes ----
+
+    fun refreshVocals() = _state.update { it.copy(vocals = vocalBank.samples) }
+
+    fun startVocalRecording() {
+        if (vocalBank.startRecording("take")) {
+            _state.update { it.copy(recording = true, error = null) }
+            audio.play(AudioEngine.Cue.TAP)
+        } else {
+            _state.update { it.copy(error = "Microphone unavailable - grant the RECORD_AUDIO permission.") }
+            audio.play(AudioEngine.Cue.ERROR)
+        }
+    }
+
+    fun stopVocalRecording() {
+        val sample = vocalBank.stopRecording()
+        _state.update {
+            it.copy(
+                recording = false,
+                vocals = vocalBank.samples,
+                status = if (sample != null) "Saved a vocal take" else null,
+                error = if (sample == null) "Nothing was recorded." else null
+            )
+        }
+    }
+
+    fun playVocal(sample: VocalBank.Sample, semitones: Float) {
+        vocalBank.play(sample, semitones)
     }
 
     /** Applies a customisation change: wearables rebuild, skin tone goes on the material. */

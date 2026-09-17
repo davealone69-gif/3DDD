@@ -109,16 +109,10 @@ fun ExportScreen(
             ) { Text("Export turntable GIF") }
             OutlinedButton(
                 onClick = { exportViewModel.exportGlb(studio.model, studio.morphWeights) },
-                enabled = !state.running && studio.model != null && studio.model?.isAsset == false,
+                enabled = !state.running && studio.model != null,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             ) { Text("Export baked GLB") }
-            if (studio.model?.isAsset == true) {
-                Text(
-                    "GLB re-export applies to imported or scanned models — the built-in rigs are generated at build time.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+
 
             state.lastOutput?.let { file ->
                 Card(
