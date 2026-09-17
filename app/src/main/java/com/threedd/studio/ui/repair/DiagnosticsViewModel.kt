@@ -2,7 +2,9 @@ package com.threedd.studio.ui.repair
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
 import com.threedd.studio.ai.AiRouter
+import com.threedd.studio.ai.LocalModelLauncher
 import com.threedd.studio.render.StudioRenderer
 import com.threedd.studio.repair.RepairSupervisor
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,14 +26,18 @@ data class DiagnosticsUiState(
     val advisorAnswer: String? = null,
     val advisorProvider: String = "rules",
     val advising: Boolean = false,
-    val localModelReachable: Boolean = false
+    val localModelReachable: Boolean = false,
+    val server: LocalModelLauncher.Status = LocalModelLauncher.Status(),
+    val installedModels: List<String> = emptyList(),
+    val manualCommand: String = ""
 )
 
 @HiltViewModel
 class DiagnosticsViewModel @Inject constructor(
     private val renderer: StudioRenderer,
     private val supervisor: RepairSupervisor,
-    private val advisor: AiRouter
+    private val advisor: AiRouter,
+    private val launcher: LocalModelLauncher
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DiagnosticsUiState())
@@ -51,8 +57,18 @@ class DiagnosticsViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            _state.update { it.copy(localModelReachable = advisor.localAvailable()) }
+            launcher.status.collect { status ->
+                _state.update {
+                    it.copy(
+                        server = status,
+                        installedModels = launcher.installedModels().map { file -> file.name },
+                        manualCommand = launcher.manualCommand(),
+                        localModelReachable = status.running
+                    )
+                }
+            }
         }
+        viewModelScope.launch { launcher.probe() }
     }
 
     fun refresh() {
@@ -98,6 +114,31 @@ class DiagnosticsViewModel @Inject constructor(
         if (learned.isNotEmpty()) {
             append("; learned_fixes=")
             append(learned.entries.take(5).joinToString(" | ") { "${it.key}=${it.value}" })
+        }
+    }
+
+    /** Launches the local model server autonomously, then points the advisor at it. */
+    fun startServer() {
+        viewModelScope.launch {
+            val status = launcher.start()
+            advisor.configureLocal(status.endpoint, "")
+            _state.update { it.copy(localModelReachable = status.running) }
+        }
+    }
+
+    fun stopServer() {
+        launcher.stop()
+        _state.update { it.copy(localModelReachable = false) }
+    }
+
+    fun probeServer() {
+        viewModelScope.launch { launcher.probe() }
+    }
+
+    fun importModel(uri: Uri) {
+        viewModelScope.launch {
+            launcher.importModel(uri)
+            _state.update { it.copy(installedModels = launcher.installedModels().map { f -> f.name }) }
         }
     }
 

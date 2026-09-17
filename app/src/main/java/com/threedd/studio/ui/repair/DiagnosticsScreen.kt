@@ -19,6 +19,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -118,6 +120,38 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
                     }
                 }
                 OutlinedButton(onClick = viewModel::clearHistory) { Text("Clear history") }
+            }
+
+            SectionTitle("Local model server")
+            Text("Status: ${state.server.phase} — ${state.server.detail}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (state.server.running) NeonCyan else TextSecondary)
+            state.server.pid?.let { Text("pid $it", style = MaterialTheme.typography.labelSmall, color = TextSecondary) }
+            state.server.modelPath?.let {
+                Text("model: ${it.substringAfterLast('/')}", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                if (state.server.running) {
+                    Button(onClick = viewModel::stopServer) { Text("Stop server") }
+                } else {
+                    Button(onClick = viewModel::startServer) { Text("Start server") }
+                }
+                OutlinedButton(onClick = viewModel::probeServer) { Text("Probe") }
+                val ggufPicker = rememberLauncherForActivityResult(
+                    ActivityResultContracts.OpenDocument()
+                ) { uri -> if (uri != null) viewModel.importModel(uri) }
+                OutlinedButton(onClick = { ggufPicker.launch(arrayOf("*/*")) }) { Text("Import .gguf") }
+            }
+            if (state.installedModels.isNotEmpty()) {
+                Text("Models: " + state.installedModels.joinToString(", "),
+                    style = MaterialTheme.typography.labelSmall, color = TextSecondary,
+                    modifier = Modifier.padding(top = 6.dp))
+            }
+            if (state.manualCommand.isNotBlank() && !state.server.running) {
+                Text("If the platform blocks the launch, run this yourself:",
+                    style = MaterialTheme.typography.labelSmall, color = TextSecondary,
+                    modifier = Modifier.padding(top = 8.dp))
+                Text(state.manualCommand, style = MaterialTheme.typography.labelSmall, color = NeonCyan)
             }
 
             SectionTitle("Assistant")
