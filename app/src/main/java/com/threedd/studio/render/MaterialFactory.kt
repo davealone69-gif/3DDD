@@ -43,6 +43,10 @@ class MaterialFactory(private val engine: Engine) {
         val builder = MaterialBuilder()
             .name("studioPbr$alphaMode")
             .shading(MaterialBuilder.Shading.LIT)
+            // The package must be compiled for the backend the engine actually uses
+            // (the emulator runs OpenGL ES through SwiftShader, devices may use Vulkan).
+            // TargetApi.ALL is 0x15 in this binding and is not a valid union of the flags.
+            .targetApi(targetApi())
             .require(MaterialBuilder.VertexAttribute.UV0)
             .require(MaterialBuilder.VertexAttribute.TANGENTS)
             .blending(
@@ -94,6 +98,12 @@ class MaterialFactory(private val engine: Engine) {
         val material = Material.Builder().payload(payload, payload.remaining()).build(engine)
         materials[alphaMode] = material
         return material
+    }
+
+    private fun targetApi(): MaterialBuilder.TargetApi = when (engine.backend) {
+        Engine.Backend.VULKAN -> MaterialBuilder.TargetApi.VULKAN
+        Engine.Backend.METAL -> MaterialBuilder.TargetApi.METAL
+        else -> MaterialBuilder.TargetApi.OPENGL
     }
 
     fun createInstance(state: MaterialState, textures: TextureSet? = null, alphaMode: Int = 0): MaterialInstance {
