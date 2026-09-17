@@ -20,7 +20,14 @@ data class AppearanceSpec(
     val augment: String = Augment.NONE.id,
     val tattoo: String = Tattoo.NONE.id,
     val accentColorHex: String = "#22E4FF",
-    val glow: Float = 0.4f
+    val glow: Float = 0.4f,
+    /** Content-library selections. Null falls back to the legacy enum fields above. */
+    val hairId: String? = null,
+    val outfitId: String? = null,
+    val accessoryId: String? = null,
+    val faceId: String? = null,
+    val skinId: String? = null,
+    val bodyId: String? = null
 ) {
     companion object {
         val STYLES = listOf("Realistic", "Stylised", "Anime", "Cyberpunk", "Minimal")

@@ -308,6 +308,235 @@ object PartBuilder {
         return acc.build()
     }
 
+
+    // ---- content-library variants: one builder per catalog entry ----
+
+    /** 100 hairstyles: base shape, volume and fringe combine into distinct geometry. */
+    fun hair(spec: ContentCatalog.Hair, m: RigMetrics): TriangleMesh? {
+        val acc = MeshAccumulator()
+        val r = m.headRadius * (1.02f + spec.volume * 0.16f)
+        val cx = 0f
+        val cz = 0f
+        when (spec.base) {
+            ContentCatalog.HairBase.SHAVED -> return null
+            ContentCatalog.HairBase.CROP ->
+                acc.partialEllipsoid(cx, m.headCenterY, cz, r, r * 1.04f, r * 1.03f, 0f, 0.58f)
+            ContentCatalog.HairBase.BOB ->
+                acc.partialEllipsoid(cx, m.headCenterY, cz, r, r * 1.06f, r * 1.05f, 0f, 0.98f)
+            ContentCatalog.HairBase.MIDI ->
+                acc.partialEllipsoid(cx, m.headCenterY, cz, r, r * 1.08f, r * 1.06f, 0f, 1.18f)
+            ContentCatalog.HairBase.LONG -> {
+                acc.partialEllipsoid(cx, m.headCenterY, cz, r, r * 1.1f, r * 1.08f, 0f, 1.35f)
+                acc.partialEllipsoid(cx, m.neckY - m.headRadius * 0.8f, cz - r * 0.28f,
+                    r * 1.1f, r * 1.45f, r * 0.6f, 0.25f, 1.1f)
+            }
+            ContentCatalog.HairBase.PONYTAIL -> {
+                acc.partialEllipsoid(cx, m.headCenterY, cz, r, r * 1.04f, r * 1.04f, 0f, 0.66f)
+                acc.capsule(
+                    floatArrayOf(0f, m.headCenterY + r * 0.3f, -r * 0.72f),
+                    floatArrayOf(0f, m.headCenterY - r * (2.0f + spec.volume), -r * 1.4f),
+                    r * (0.28f + spec.volume * 0.1f)
+                )
+            }
+            ContentCatalog.HairBase.BUN -> {
+                acc.partialEllipsoid(cx, m.headCenterY, cz, r, r * 1.04f, r * 1.04f, 0f, 0.72f)
+                acc.ellipsoid(cx, m.headCenterY + r * 1.0f, -r * 0.35f,
+                    r * (0.42f + spec.volume * 0.14f), r * 0.4f, r * 0.4f, seg = 12, rings = 9)
+            }
+            ContentCatalog.HairBase.TWINTAILS -> {
+                acc.partialEllipsoid(cx, m.headCenterY, cz, r, r * 1.04f, r * 1.04f, 0f, 0.8f)
+                for (side in intArrayOf(-1, 1)) {
+                    acc.capsule(
+                        floatArrayOf(side * r * 0.9f, m.headCenterY + r * 0.15f, -r * 0.3f),
+                        floatArrayOf(side * r * (1.3f + spec.volume), m.neckY, -r * 0.6f),
+                        r * (0.24f + spec.volume * 0.1f)
+                    )
+                }
+            }
+            ContentCatalog.HairBase.BRAIDS -> {
+                acc.partialEllipsoid(cx, m.headCenterY, cz, r, r * 1.05f, r * 1.05f, 0f, 1.05f)
+                for (side in intArrayOf(-1, 1)) {
+                    var y = m.neckY + m.headRadius * 0.2f
+                    var step = 0
+                    while (step < 6) {
+                        acc.ellipsoid(side * r * 0.85f, y, -r * 0.5f, r * 0.2f, r * 0.16f, r * 0.2f, seg = 8, rings = 6)
+                        y -= r * 0.3f
+                        step++
+                    }
+                }
+            }
+            ContentCatalog.HairBase.MOHAWK -> {
+                acc.box(floatArrayOf(0f, m.headCenterY + r * 0.72f, 0f),
+                    floatArrayOf(r * (0.12f + spec.volume * 0.1f), r * (0.5f + spec.volume * 0.35f), r * 1.12f))
+            }
+        }
+        // fringe adds geometry in front of the brow
+        if (spec.fringe != ContentCatalog.HairFringe.NONE && spec.base != ContentCatalog.HairBase.SHAVED) {
+            val y = m.headCenterY + r * 0.72f
+            val z = r * 0.86f
+            when (spec.fringe) {
+                ContentCatalog.HairFringe.STRAIGHT ->
+                    acc.box(floatArrayOf(0f, y, z), floatArrayOf(r * 0.86f, r * 0.3f, r * 0.16f))
+                ContentCatalog.HairFringe.SIDE ->
+                    acc.box(floatArrayOf(r * 0.34f, y - r * 0.16f, z), floatArrayOf(r * 0.6f, r * 0.5f, r * 0.16f))
+                ContentCatalog.HairFringe.SWEPT ->
+                    acc.box(floatArrayOf(-r * 0.2f, y - r * 0.1f, z), floatArrayOf(r * 0.72f, r * 0.36f, r * 0.15f))
+                ContentCatalog.HairFringe.CURTAIN -> {
+                    for (side in intArrayOf(-1, 1)) {
+                        acc.box(floatArrayOf(side * r * 0.62f, y - r * 0.3f, z * 0.94f),
+                            floatArrayOf(r * 0.24f, r * 0.62f, r * 0.14f))
+                    }
+                }
+                ContentCatalog.HairFringe.NONE -> Unit
+            }
+        }
+        return acc.build()
+    }
+
+    /** 200 outfits: garment, sleeve length, hem and trim all contribute geometry. */
+    fun outfit(spec: ContentCatalog.Outfit, m: RigMetrics): TriangleMesh? {
+        val acc = MeshAccumulator()
+        val torsoHalf = (m.shoulderY - m.hipY) * 0.6f
+        val hemScale = if (spec.length.toHip) 1.0f else 0.78f
+        val garmentScale = when (spec.garment) {
+            ContentCatalog.Garment.TUNIC -> 1.06f
+            ContentCatalog.Garment.BODYSUIT -> 1.02f
+            ContentCatalog.Garment.DRESS -> 1.08f
+            ContentCatalog.Garment.JACKET -> 1.14f
+            ContentCatalog.Garment.ARMOUR -> 1.2f
+        }
+
+        acc.partialEllipsoid(0f, m.torsoCenterY, 0f,
+            m.torsoHalfWidth * garmentScale, torsoHalf * hemScale, m.torsoHalfDepth * garmentScale,
+            0f, 1.0f)
+
+        if (spec.garment == ContentCatalog.Garment.DRESS || spec.garment == ContentCatalog.Garment.TUNIC) {
+            acc.cone(floatArrayOf(0f, m.hipY, 0f),
+                m.torsoHalfWidth * 1.05f,
+                m.torsoHalfWidth * (if (spec.length.toHip) 1.7f else 1.35f),
+                (m.maxY - m.minY) * 0.2f)
+        }
+        if (spec.garment == ContentCatalog.Garment.ARMOUR) {
+            acc.box(floatArrayOf(0f, m.torsoCenterY + m.headRadius * 0.2f, m.torsoHalfDepth * 1.16f),
+                floatArrayOf(m.torsoHalfWidth * 0.98f, m.headRadius * 0.48f, m.headRadius * 0.12f))
+            for (side in intArrayOf(-1, 1)) {
+                acc.ellipsoid(side * m.shoulderHalfWidth, m.shoulderY + m.headRadius * 0.16f, 0f,
+                    m.shoulderHalfWidth * 0.44f, m.headRadius * 0.52f, m.torsoHalfDepth * 0.78f, seg = 12, rings = 9)
+            }
+        }
+        if (spec.sleeve != ContentCatalog.Sleeve.NONE) {
+            val startY = m.shoulderY
+            val endY = startY - (startY - (m.hipY + m.headRadius * 0.6f)) * spec.sleeve.length
+            for (side in intArrayOf(-1, 1)) {
+                acc.capsule(
+                    floatArrayOf(side * m.shoulderHalfWidth * 0.95f, startY, 0f),
+                    floatArrayOf(side * (m.armSpan * 0.88f), endY, 0f),
+                    m.headRadius * 0.3f
+                )
+            }
+        }
+        if (spec.trim != ContentCatalog.Trim.PLAIN) {
+            val r = m.headRadius * (if (spec.trim == ContentCatalog.Trim.STUDS) 0.07f else 0.12f)
+            var y = m.shoulderY - m.headRadius * 0.5f
+            var i = 0
+            while (y > m.hipY && i < 5) {
+                acc.torus(0f, y, 0f, m.torsoHalfWidth * garmentScale * 0.98f, r, seg = 18)
+                y -= m.headRadius * 0.7f
+                i++
+            }
+        }
+        return acc.build()
+    }
+
+    /** 100 accessories: kind chooses the shape, the gem adds a stone. */
+    fun accessory(spec: ContentCatalog.Accessory, m: RigMetrics): TriangleMesh? {
+        val acc = MeshAccumulator()
+        val r = m.headRadius
+        val eyeY = m.headCenterY + r * 0.12f
+        val eyeZ = r * 0.92f
+        when (spec.kind) {
+            ContentCatalog.AccessoryKind.GLASSES -> {
+                for (side in intArrayOf(-1, 1)) acc.torus(side * r * 0.38f, eyeY, eyeZ, r * 0.24f, r * 0.035f)
+                acc.box(floatArrayOf(0f, eyeY, eyeZ), floatArrayOf(r * 0.16f, r * 0.02f, r * 0.02f))
+            }
+            ContentCatalog.AccessoryKind.VISOR ->
+                acc.partialEllipsoid(0f, eyeY + r * 0.05f, r * 0.1f, r * 1.02f, r * 0.34f, r * 1.0f, 0.32f, 0.52f)
+            ContentCatalog.AccessoryKind.MASK ->
+                acc.partialEllipsoid(0f, m.headCenterY, r * 0.06f, r * 1.02f, r * 0.72f, r * 0.9f, 0.42f, 1.0f)
+            ContentCatalog.AccessoryKind.EARRINGS -> {
+                for (side in intArrayOf(-1, 1))
+                    acc.ellipsoid(side * r * 0.95f, m.headCenterY - r * 0.05f, 0f, r * 0.09f, r * 0.14f, r * 0.09f, seg = 10, rings = 8)
+            }
+            ContentCatalog.AccessoryKind.NECKLACE -> {
+                acc.torus(0f, m.neckY, 0f, r * 0.5f, r * 0.05f, seg = 18)
+                acc.ellipsoid(0f, m.neckY - r * 0.42f, r * 0.3f, r * 0.1f, r * 0.12f, r * 0.05f, seg = 10, rings = 8)
+            }
+            ContentCatalog.AccessoryKind.CROWN -> {
+                acc.torus(0f, m.headCenterY + r * 0.78f, 0f, r * 0.72f, r * 0.05f, seg = 22)
+                for (i in 0 until 6) {
+                    val a = 2.0 * PI * i / 6
+                    acc.box(floatArrayOf((cos(a) * r * 0.72f).toFloat(), m.headCenterY + r * 0.94f, (sin(a) * r * 0.72f).toFloat()),
+                        floatArrayOf(r * 0.05f, r * 0.16f, r * 0.05f))
+                }
+            }
+            ContentCatalog.AccessoryKind.HORNS -> {
+                for (side in intArrayOf(-1, 1)) {
+                    acc.capsule(
+                        floatArrayOf(side * r * 0.55f, m.headCenterY + r * 0.7f, 0f),
+                        floatArrayOf(side * r * 0.95f, m.headCenterY + r * 1.7f, -r * 0.35f),
+                        r * 0.1f
+                    )
+                }
+            }
+            ContentCatalog.AccessoryKind.WINGS -> {
+                for (side in intArrayOf(-1, 1)) {
+                    acc.box(floatArrayOf(side * m.shoulderHalfWidth * 1.5f, m.shoulderY + m.headRadius * 0.3f, -m.torsoHalfDepth * 0.9f),
+                        floatArrayOf(m.shoulderHalfWidth * 0.85f, m.headRadius * 0.9f, m.headRadius * 0.06f))
+                }
+            }
+            ContentCatalog.AccessoryKind.BELT -> {
+                acc.torus(0f, m.hipY + m.headRadius * 0.1f, 0f, m.hipHalfWidth * 1.06f, m.headRadius * 0.09f, seg = 20)
+                acc.box(floatArrayOf(0f, m.hipY + m.headRadius * 0.1f, m.torsoHalfDepth * 1.02f),
+                    floatArrayOf(m.headRadius * 0.16f, m.headRadius * 0.14f, m.headRadius * 0.05f))
+            }
+            ContentCatalog.AccessoryKind.BRACELET -> {
+                for (side in intArrayOf(-1, 1))
+                    acc.torus(side * m.armSpan * 0.82f, m.hipY + m.headRadius * 1.1f, 0f, m.headRadius * 0.24f, m.headRadius * 0.06f, seg = 14)
+            }
+        }
+        if (spec.gem != ContentCatalog.Gem.NONE) {
+            acc.ellipsoid(0f, m.neckY - m.headRadius * 0.42f, m.headRadius * 0.32f,
+                m.headRadius * 0.09f, m.headRadius * 0.09f, m.headRadius * 0.05f, seg = 10, rings = 8)
+        }
+        return acc.build()
+    }
+
+    /** 50 faces: the head is scaled and the irises are sized, spaced and tilted per face. */
+    fun faceGeometry(face: ContentCatalog.Face, m: RigMetrics): TriangleMesh? {
+        val acc = MeshAccumulator()
+        val r = m.headRadius
+        val eyeY = m.headCenterY + r * 0.12f
+        val eyeZ = r * 0.92f
+        val half = r * face.eyeSpacing
+        for (side in intArrayOf(-1, 1)) {
+            val y = eyeY + side * face.eyeTilt * r * 0.5f
+            acc.ellipsoid(
+                side * half, y, eyeZ,
+                r * 0.13f * face.eyeScale, r * 0.13f * face.eyeScale, r * 0.06f,
+                seg = 12, rings = 8
+            )
+        }
+        // brows follow the jaw definition, so a defined jaw reads as a stronger brow
+        val browWidth = r * 0.3f * (1f + (face.jaw.width - 1f) * 2f)
+        for (side in intArrayOf(-1, 1)) {
+            acc.box(
+                floatArrayOf(side * half, eyeY + r * (0.3f + face.eyeTilt * 0.3f), eyeZ * 0.96f),
+                floatArrayOf(browWidth, r * 0.045f, r * 0.05f)
+            )
+        }
+        return acc.build()
+    }
+
     // ---- primitive accumulation ----
 
     private class MeshAccumulator {
