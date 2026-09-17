@@ -95,7 +95,12 @@ class MaterialFactory(private val engine: Engine) {
             android.util.Log.e(TAG, "filamat failed to compile studioPbr$alphaMode; see the filamat lines in logcat")
             error("studioPbr material failed to compile (alphaMode=$alphaMode)")
         }
-        val material = Material.Builder().payload(payload, payload.remaining()).build(engine)
+        if (engine.backend == Engine.Backend.NOOP) {
+            android.util.Log.e(TAG, "engine is on the NOOP driver; material creation cannot succeed")
+        }
+        val material = guarded({ "create Material (backend=${engine.backend}, bytes=${payload.remaining()})" }) {
+            Material.Builder().payload(payload, payload.remaining()).build(engine)
+        }
         materials[alphaMode] = material
         return material
     }

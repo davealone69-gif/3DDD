@@ -72,6 +72,16 @@ class RuntimePipelineTest {
     }
 
     @Test
+    fun engineUsesARealGraphicsDriver() {
+        val backend = renderer.engine.backend
+        assertTrue(
+            "Filament selected the NOOP driver ($backend); no rendering can succeed. " +
+                "On an emulator this usually means no usable GLES/Vulkan context.",
+            backend != com.google.android.filament.Engine.Backend.NOOP
+        )
+    }
+
+    @Test
     fun loadsEveryBuiltInRig() {
         ModelRepository.builtInModels.forEach { model ->
             assertTrue("failed to load ${model.displayName}", renderer.load(model))
