@@ -170,21 +170,44 @@ class ModelLoader(
             builder.attribute(VertexBuffer.VertexAttribute.BONE_WEIGHTS, weightIndex, VertexBuffer.AttributeType.FLOAT4, 0, 0)
         }
 
-        val vertexBuffer = builder.build(engine)
-        vertexBuffer.setBufferAt(engine, 0, floats(primitive.positions))
-        vertexBuffer.setBufferAt(engine, 1, floats(tangents))
-        vertexBuffer.setBufferAt(engine, 2, floats(uvs))
-        if (colorIndex >= 0) vertexBuffer.setBufferAt(engine, colorIndex, floats(primitive.colors!!))
+        val vertexBuffer = guarded({ "build vertex buffer (verts=$vertexCount buffers=$bufferCount)" }) {
+            builder.build(engine)
+        }
+        guarded({ "upload positions (verts=$vertexCount floats=${primitive.positions.size})" }) {
+            vertexBuffer.setBufferAt(engine, 0, floats(primitive.positions))
+        }
+        guarded({ "upload tangents (floats=${tangents.size})" }) {
+            vertexBuffer.setBufferAt(engine, 1, floats(tangents))
+        }
+        guarded({ "upload uv0 (floats=${uvs.size})" }) {
+            vertexBuffer.setBufferAt(engine, 2, floats(uvs))
+        }
+        if (colorIndex >= 0) {
+            val colour = primitive.colors!!
+            guarded({ "upload color (floats=${colour.size})" }) {
+                vertexBuffer.setBufferAt(engine, colorIndex, floats(colour))
+            }
+        }
         if (jointIndex >= 0) {
-            vertexBuffer.setBufferAt(engine, jointIndex, bytesOf(boneIndices!!))
-            vertexBuffer.setBufferAt(engine, weightIndex, floats(boneWeights!!))
+            val joints = boneIndices!!
+            val weightValues = boneWeights!!
+            guarded({ "upload bone indices (count=${joints.size} verts=$vertexCount)" }) {
+                vertexBuffer.setBufferAt(engine, jointIndex, bytesOf(joints))
+            }
+            guarded({ "upload bone weights (floats=${weightValues.size} verts=$vertexCount)" }) {
+                vertexBuffer.setBufferAt(engine, weightIndex, floats(weightValues))
+            }
         }
 
-        val indexBuffer = IndexBuffer.Builder()
-            .indexCount(primitive.indices.size)
-            .bufferType(IndexBuffer.Builder.IndexType.UINT)
-            .build(engine)
-        indexBuffer.setBuffer(engine, ints(primitive.indices))
+        val indexBuffer = guarded({ "build index buffer (indices=${primitive.indices.size})" }) {
+            IndexBuffer.Builder()
+                .indexCount(primitive.indices.size)
+                .bufferType(IndexBuffer.Builder.IndexType.UINT)
+                .build(engine)
+        }
+        guarded({ "upload indices (indices=${primitive.indices.size})" }) {
+            indexBuffer.setBuffer(engine, ints(primitive.indices))
+        }
 
         val material = parsed.materials.getOrNull(primitive.materialIndex)
             ?: GltfDocument.Material()
@@ -235,7 +258,12 @@ class ModelLoader(
                 .order(ByteOrder.nativeOrder()).asFloatBuffer()
         }
 
-        renderableBuilder.build(engine, entity)
+        guarded({
+            "build renderable (verts=$vertexCount indices=${primitive.indices.size} " +
+                "skin=${boneTransformInstances?.size ?: 0} bounds=[${half.joinToString()}] centre=[${centre.joinToString()}])"
+        }) {
+            renderableBuilder.build(engine, entity)
+        }
         val renderableInstance = rm.getInstance(entity)
 
         // A skinned mesh is placed at the scene root: the glTF spec ignores the node transform
@@ -385,7 +413,9 @@ class ModelLoader(
                 }
             }
             buffer.flip()
-            rm.setBonesAsMatrices(piece.renderableInstance, buffer, transformInstances.size, 0)
+            guarded({ "upload ${transformInstances.size} bone matrices" }) {
+                rm.setBonesAsMatrices(piece.renderableInstance, buffer, transformInstances.size, 0)
+            }
         }
     }
 

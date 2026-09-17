@@ -238,10 +238,12 @@ class MaterialFactory(private val engine: Engine) {
         val buffer = ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder())
         buffer.put(bytes)
         buffer.flip()
-        texture.setImage(
-            engine, 0,
-            Texture.PixelBufferDescriptor(buffer, Texture.Format.RGBA, Texture.Type.UBYTE)
-        )
+        guarded({ "upload texture ${width}x${height} (bytes=${bytes.size}, srgb=$srgb)" }) {
+            texture.setImage(
+                engine, 0,
+                Texture.PixelBufferDescriptor(buffer, Texture.Format.RGBA, Texture.Type.UBYTE)
+            )
+        }
         engine.flushAndWait()
         ownedTextures.add(texture)
         return texture

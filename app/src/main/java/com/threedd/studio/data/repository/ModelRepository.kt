@@ -128,8 +128,6 @@ class ModelRepository @Inject constructor(
         return IMAGE_EXTENSIONS.any { name.endsWith(it) }
     }
 
-    companion object {
-
     private fun queryDisplayName(uri: Uri): String? =
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { cursor ->

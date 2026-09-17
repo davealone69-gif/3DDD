@@ -123,13 +123,16 @@ jobs:
           script: |
             set +e
             adb logcat -c || true
+            adb logcat -v time > /tmp/android.log 2>&1 &
+            LOGCAT_PID=$!
             ./gradlew --no-daemon :app:connectedDebugAndroidTest --stacktrace
             RC=$?
-            adb logcat -d -v brief > logcat.txt || true
-            echo "===== filamat / Filament diagnostics ====="
-            grep -iE "filamat|filament|material|shader|glsl" logcat.txt | tail -120 || true
-            echo "===== app exceptions ====="
-            grep -iE "3DoubleD|AndroidRuntime|FATAL" logcat.txt | tail -60 || true
+            sleep 3
+            kill $LOGCAT_PID 2>/dev/null || true
+            echo "===== logcat: filamat / Filament / app ====="
+            grep -iE "filamat|filament|3DoubleD|AndroidRuntime|FATAL" /tmp/android.log | tail -200 || true
+            echo "===== logcat tail ====="
+            tail -150 /tmp/android.log || true
             exit $RC
 
       - name: Upload instrumented test reports
