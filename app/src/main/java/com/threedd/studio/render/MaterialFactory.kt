@@ -43,6 +43,8 @@ class MaterialFactory(private val engine: Engine) {
         val builder = MaterialBuilder()
             .name("studioPbr$alphaMode")
             .shading(MaterialBuilder.Shading.LIT)
+            .require(MaterialBuilder.VertexAttribute.UV0)
+            .require(MaterialBuilder.VertexAttribute.TANGENTS)
             .blending(
                 when (alphaMode) {
                     1 -> MaterialBuilder.BlendingMode.MASKED
@@ -85,7 +87,10 @@ class MaterialFactory(private val engine: Engine) {
 
         val packageResult = builder.build(engine)
         val payload = packageResult.buffer
-        check(payload.capacity() > 0) { "studioPbr material failed to compile" }
+        if (payload.capacity() <= 0) {
+            android.util.Log.e(TAG, "filamat failed to compile studioPbr$alphaMode; see the filamat lines in logcat")
+            error("studioPbr material failed to compile (alphaMode=$alphaMode)")
+        }
         val material = Material.Builder().payload(payload, payload.remaining()).build(engine)
         materials[alphaMode] = material
         return material
@@ -225,13 +230,7 @@ class MaterialFactory(private val engine: Engine) {
         buffer.flip()
         texture.setImage(
             engine, 0,
-            Texture.PixelBufferDescriptor(
-                buffer,
-                Texture.Format.RGBA,
-                Texture.Type.UBYTE,
-                1, 0, 0, width * 4,
-                null, null
-            )
+            Texture.PixelBufferDescriptor(buffer, Texture.Format.RGBA, Texture.Type.UBYTE)
         )
         engine.flushAndWait()
         ownedTextures.add(texture)
@@ -249,6 +248,7 @@ class MaterialFactory(private val engine: Engine) {
     }
 
     companion object {
+        const val TAG = "3DoubleD-Material"
         private const val FRAGMENT_SOURCE = """
             void material(inout MaterialInputs material) {
                 prepareMaterial(material);

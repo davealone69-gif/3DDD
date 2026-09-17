@@ -120,7 +120,17 @@ jobs:
           arch: x86_64
           emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest --stacktrace
+          script: |
+            set +e
+            adb logcat -c || true
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest --stacktrace
+            RC=$?
+            adb logcat -d -v brief > logcat.txt || true
+            echo "===== filamat / Filament diagnostics ====="
+            grep -iE "filamat|filament|material|shader|glsl" logcat.txt | tail -120 || true
+            echo "===== app exceptions ====="
+            grep -iE "3DoubleD|AndroidRuntime|FATAL" logcat.txt | tail -60 || true
+            exit $RC
 
       - name: Upload instrumented test reports
         if: always()
