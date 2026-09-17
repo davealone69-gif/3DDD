@@ -23,11 +23,6 @@ import com.threedd.studio.data.model.QualityPreset
  */
 class StudioRenderer(private val context: Context) {
 
-    companion object {
-        const val TAG = "3DoubleD-Render"
-    }
-
-
     val engine: Engine = createEngine()
     val renderer: Renderer = engine.createRenderer()
     val scene: Scene = engine.createScene()
