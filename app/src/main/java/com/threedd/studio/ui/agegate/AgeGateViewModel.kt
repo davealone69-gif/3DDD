@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.threedd.studio.audio.AudioEngine
 import com.threedd.studio.content.AgeGate
+import com.threedd.studio.content.AgeVerification
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,23 +40,27 @@ class AgeGateViewModel @Inject constructor(
     fun confirm() {
         val value = _state.value.dateOfBirth
         when (val result = ageGate.verify(value)) {
-            is AgeGate.Result.Unlocked -> {
+            is AgeVerification.Result.Unlocked -> {
                 viewModelScope.launch {
                     ageGate.commit(result, value)
                     _state.update { it.copy(message = "Verified: ${result.age}. Mature content unlocked.", busy = false) }
                     audio.play(AudioEngine.Cue.UNLOCK)
                 }
             }
-            AgeGate.Result.Underage -> {
-                _state.update { it.copy(message = "Access denied — you must be 18 or older.") }
+            AgeVerification.Result.Underage -> {
+                _state.update { it.copy(message = "Access denied - you must be 18 or older.") }
                 audio.play(AudioEngine.Cue.ERROR)
             }
-            AgeGate.Result.InvalidDate -> {
+            AgeVerification.Result.InvalidDate -> {
                 _state.update { it.copy(message = "Enter a valid date as YYYY-MM-DD.") }
                 audio.play(AudioEngine.Cue.ERROR)
             }
-            AgeGate.Result.FutureDate -> {
+            AgeVerification.Result.FutureDate -> {
                 _state.update { it.copy(message = "That date is in the future.") }
+                audio.play(AudioEngine.Cue.ERROR)
+            }
+            AgeVerification.Result.ImplausibleDate -> {
+                _state.update { it.copy(message = "That date of birth is not plausible.") }
                 audio.play(AudioEngine.Cue.ERROR)
             }
         }

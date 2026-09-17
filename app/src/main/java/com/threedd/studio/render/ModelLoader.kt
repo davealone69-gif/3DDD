@@ -8,6 +8,7 @@ import com.google.android.filament.MaterialInstance
 import com.google.android.filament.RenderableManager
 import com.google.android.filament.Scene
 import com.google.android.filament.VertexBuffer
+import com.threedd.studio.data.gltf.AnimationSampler
 import com.threedd.studio.data.gltf.GltfDocument
 import com.threedd.studio.data.model.AnimationClip
 import com.threedd.studio.data.model.AvatarModel
@@ -316,7 +317,7 @@ class ModelLoader(
         var animatedWeights: MutableMap<String, Float>? = null
 
         animation.channels.forEach { channel ->
-            val value = evaluate(channel, time) ?: return@forEach
+            val value = AnimationSampler.evaluate(channel, time) ?: return@forEach
             animatedNodes.add(channel.nodeIndex)
             when (channel.path) {
                 GltfDocument.PATH_TRANSLATION -> nodeBaseTrs.getOrNull(channel.nodeIndex)?.let {
@@ -386,98 +387,6 @@ class ModelLoader(
             buffer.flip()
             rm.setBonesAsMatrices(piece.renderableInstance, buffer, transformInstances.size, 0)
         }
-    }
-
-    /** Samples a channel, honouring STEP, LINEAR and CUBICSPLINE interpolation. */
-    private fun evaluate(channel: GltfDocument.Channel, time: Float): FloatArray? {
-        val times = channel.times
-        val values = channel.values
-        val components = channel.componentCount
-        if (times.isEmpty() || components <= 0) return null
-        if (values.size < components) return null
-
-        val stride = if (channel.interpolation == GltfDocument.INTERP_CUBICSPLINE) components * 3 else components
-        val keyCount = minOf(times.size, values.size / stride)
-        if (keyCount <= 0) return null
-
-        if (times.size == 1 || time <= times[0]) return key(values, 0, stride, components, channel.interpolation)
-        if (time >= times[keyCount - 1]) {
-            return key(values, keyCount - 1, stride, components, channel.interpolation)
-        }
-
-        var low = 0
-        var high = keyCount - 1
-        while (low + 1 < high) {
-            val mid = (low + high) / 2
-            if (times[mid] <= time) low = mid else high = mid
-        }
-        val t0 = times[low]
-        val t1 = times[high]
-        val span = (t1 - t0).takeIf { it > 1e-6f } ?: return key(values, low, stride, components, channel.interpolation)
-        val u = ((time - t0) / span).coerceIn(0f, 1f)
-
-        if (channel.interpolation == GltfDocument.INTERP_STEP) {
-            return key(values, low, stride, components, channel.interpolation)
-        }
-
-        if (channel.interpolation == GltfDocument.INTERP_CUBICSPLINE) {
-            val out = FloatArray(components)
-            val v0 = low * stride + components
-            val v1 = high * stride + components
-            for (c in 0 until components) {
-                val p0 = values.getOrElse(v0 + c) { 0f }
-                val m0 = values.getOrElse(low * stride + c) { 0f } * span
-                val p1 = values.getOrElse(v1 + c) { 0f }
-                val m1 = values.getOrElse(high * stride + 2 * components + c) { 0f } * span
-                val u2 = u * u
-                val u3 = u2 * u
-                out[c] = (2 * u3 - 3 * u2 + 1) * p0 + (u3 - 2 * u2 + u) * m0 +
-                    (-2 * u3 + 3 * u2) * p1 + (u3 - u2) * m1
-            }
-            return out
-        }
-
-        val a = key(values, low, stride, components, channel.interpolation) ?: return null
-        val b = key(values, high, stride, components, channel.interpolation) ?: return null
-        return if (channel.path == GltfDocument.PATH_ROTATION) {
-            slerp(a, b, u, components)
-        } else {
-            FloatArray(components) { c -> a[c] + (b[c] - a[c]) * u }
-        }
-    }
-
-    private fun key(values: FloatArray, index: Int, stride: Int, components: Int, interpolation: Int): FloatArray? {
-        val base = if (interpolation == GltfDocument.INTERP_CUBICSPLINE) {
-            index * stride + components
-        } else {
-            index * stride
-        }
-        if (base + components > values.size) return null
-        return FloatArray(components) { values[base + it] }
-    }
-
-    private fun slerp(a: FloatArray, b: FloatArray, u: Float, components: Int): FloatArray {
-        if (components != 4) return FloatArray(components) { a[it] + (b[it] - a[it]) * u }
-        var dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
-        var bx = b[0]; var by = b[1]; var bz = b[2]; var bw = b[3]
-        if (dot < 0f) {
-            dot = -dot; bx = -bx; by = -by; bz = -bz; bw = -bw
-        }
-        if (dot > 0.9995f) {
-            val out = FloatArray(4) { a[it] + (floatArrayOf(bx, by, bz, bw)[it] - a[it]) * u }
-            return normalizeQuat(out)
-        }
-        val theta = kotlin.math.acos(dot.coerceIn(-1f, 1f))
-        val sinTheta = kotlin.math.sin(theta)
-        val wa = kotlin.math.sin((1f - u) * theta) / sinTheta
-        val wb = kotlin.math.sin(u * theta) / sinTheta
-        return normalizeQuat(FloatArray(4) { wa * a[it] + wb * floatArrayOf(bx, by, bz, bw)[it] })
-    }
-
-    private fun normalizeQuat(q: FloatArray): FloatArray {
-        val len = sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3])
-        if (len < 1e-6f) return floatArrayOf(0f, 0f, 0f, 1f)
-        return FloatArray(4) { q[it] / len }
     }
 
     fun unload() {

@@ -154,7 +154,9 @@ class MaterialFactory(private val engine: Engine) {
         fun build(textureIndex: Int, srgb: Boolean): Texture? {
             if (textureIndex < 0) return null
             val ref = document.textures.getOrNull(textureIndex) ?: return null
-            val bitmap = document.images.getOrNull(ref.imageIndex) ?: return null
+            val encoded = document.images.getOrNull(ref.imageIndex) ?: return null
+            val bitmap = android.graphics.BitmapFactory.decodeByteArray(encoded, 0, encoded.size)
+                ?: return null
             samplers[textureIndex] = samplerFor(ref)
             return textureFromBitmap(bitmap, srgb)
         }

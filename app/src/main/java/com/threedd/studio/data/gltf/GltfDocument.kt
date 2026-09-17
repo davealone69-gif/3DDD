@@ -1,8 +1,6 @@
 package com.threedd.studio.data.gltf
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.util.Base64
+import java.util.Base64
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.json.JSONArray
@@ -104,7 +102,7 @@ object GltfDocument {
         val sceneRoots: IntArray,
         val skins: List<Skin>,
         val animations: List<Animation>,
-        val images: List<Bitmap?>,
+        val images: List<ByteArray?>,
         val textures: List<TextureRef?>,
         val materials: List<Material>,
         val morphTargetNames: List<String>
@@ -367,7 +365,7 @@ object GltfDocument {
         }
     }
 
-    private fun readImages(gltf: JSONObject, views: JSONArray, buffers: List<ByteArray?>): List<Bitmap?> {
+    private fun readImages(gltf: JSONObject, views: JSONArray, buffers: List<ByteArray?>): List<ByteArray?> {
         val array = gltf.optJSONArray("images") ?: return emptyList()
         return (0 until array.length()).map { i ->
             val image = array.getJSONObject(i)
@@ -390,7 +388,7 @@ object GltfDocument {
                 }
                 else -> null
             }
-            bytes?.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() }
+            bytes
         }
     }
 
@@ -442,7 +440,7 @@ object GltfDocument {
         if (comma < 0) return@runCatching null
         val payload = uri.substring(comma + 1)
         if (uri.substring(0, comma).contains(";base64")) {
-            Base64.decode(payload, Base64.DEFAULT)
+            Base64.getDecoder().decode(payload)
         } else {
             java.net.URLDecoder.decode(payload, "UTF-8").toByteArray(Charsets.UTF_8)
         }
