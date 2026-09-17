@@ -18,6 +18,7 @@ sealed class Destination(val route: String) {
     data object Scan : Destination("scan")
     data object Settings : Destination("settings")
     data object AgeGate : Destination("agegate")
+    data object Diagnostics : Destination("diagnostics")
     data object About : Destination("about")
 }
 

@@ -13,6 +13,7 @@ import com.google.android.filament.View
 import com.google.android.filament.Viewport
 import com.google.android.filament.android.UiHelper
 import com.threedd.studio.data.avatar.AppearanceSpec
+import com.threedd.studio.repair.RepairSupervisor
 import com.threedd.studio.data.avatar.PartBuilder
 import com.threedd.studio.data.model.AvatarModel
 import com.threedd.studio.data.model.LightState
@@ -23,7 +24,7 @@ import com.threedd.studio.data.model.QualityPreset
  * The rendering core: one Engine, Renderer, Scene, View and Camera for the studio.
  * Owned by the viewport composable for the lifetime of the screen.
  */
-class StudioRenderer(val context: Context) {
+class StudioRenderer(val context: Context, private val supervisor: RepairSupervisor) {
 
     val engine: Engine = createEngine()
     val renderer: Renderer = engine.createRenderer()
@@ -130,14 +131,27 @@ class StudioRenderer(val context: Context) {
      */
     fun load(model: AvatarModel): Boolean {
         lastError = null
-        val ok = try {
-            models.load(model)
-        } catch (t: Throwable) {
-            android.util.Log.e(TAG, "failed to load ${model.displayName}", t)
-            lastError = t.message ?: t::class.java.simpleName
-            false
+        // A load can fail for several distinct reasons. Rather than report and give up, try the
+        // recoveries the app knows about, remembering which one works for this failure.
+        val repairs = listOf(
+            repair("clear-generated-parts", "Discard the generated wearables and retry") {
+                partLayer.clear(); true
+            },
+            repair("rebuild-material", "Recompile the PBR material and retry") {
+                materials.destroy(); true
+            },
+            repair("simplified-material", "Fall back to the simplified shader and retry") {
+                materials.forceSimplified(); true
+            },
+            repair("clear-scene", "Empty the scene and retry") {
+                scene.removeAllEntities(); true
+            }
+        )
+        val loaded = supervisor.attempt("render-load", repairs) { models.load(model) }
+        if (loaded == null) {
+            lastError = "Could not load ${model.displayName} after repair attempts"
+            return false
         }
-        if (!ok) return false
         loadedName = model.displayName
         try {
             environment.install(lightState)
@@ -218,6 +232,13 @@ class StudioRenderer(val context: Context) {
         orbit.reset()
         fitCamera()
     }
+
+    private fun repair(id: String, description: String, action: () -> Boolean) =
+        object : RepairSupervisor.Repair {
+            override val id = id
+            override val description = description
+            override fun apply() = action()
+        }
 
     private fun fitCamera() {
         val bounds = lastBounds ?: return

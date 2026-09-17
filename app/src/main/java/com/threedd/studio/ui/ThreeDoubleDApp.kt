@@ -18,6 +18,7 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.threedd.studio.ui.about.AboutScreen
+import com.threedd.studio.ui.repair.DiagnosticsScreen
 import com.threedd.studio.ui.agegate.AgeGateScreen
 import com.threedd.studio.ui.export.ExportScreen
 import com.threedd.studio.ui.library.LibraryScreen
@@ -74,6 +75,7 @@ fun ThreeDoubleDApp() {
                     onOpenSettings = { navController.navigate(Destination.Settings.route) },
                     onOpenAgeGate = { navController.navigate(Destination.AgeGate.route) },
                     onOpenAbout = { navController.navigate(Destination.About.route) },
+                    onOpenDiagnostics = { navController.navigate(Destination.Diagnostics.route) },
                     onOpenExport = { navController.navigate(Destination.Export.route) }
                 )
             }
@@ -86,7 +88,10 @@ fun ThreeDoubleDApp() {
             composable(Destination.Export.route) { ExportScreen() }
             composable(Destination.Scan.route) { ScanScreen() }
             composable(Destination.Settings.route) {
-                SettingsScreen(onOpenAgeGate = { navController.navigate(Destination.AgeGate.route) })
+                SettingsScreen(
+                    onOpenAgeGate = { navController.navigate(Destination.AgeGate.route) },
+                    onOpenDiagnostics = { navController.navigate(Destination.Diagnostics.route) }
+                )
             }
             composable(
                 route = "${Destination.AgeGate.route}?next={next}",
@@ -99,6 +104,7 @@ fun ThreeDoubleDApp() {
                     }
                 )
             }
+            composable(Destination.Diagnostics.route) { DiagnosticsScreen() }
             composable(Destination.About.route) { AboutScreen() }
         }
     }

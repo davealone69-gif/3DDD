@@ -8,6 +8,7 @@ import com.threedd.studio.data.settings.SettingsStore
 import com.threedd.studio.content.AgeGate
 import com.threedd.studio.export.ExportManager
 import com.threedd.studio.render.StudioRenderer
+import com.threedd.studio.repair.RepairSupervisor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -35,7 +36,8 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun studioRenderer(@ApplicationContext context: Context) = StudioRenderer(context)
+    fun studioRenderer(@ApplicationContext context: Context, supervisor: RepairSupervisor) =
+        StudioRenderer(context, supervisor)
 
     @Provides
     @Singleton

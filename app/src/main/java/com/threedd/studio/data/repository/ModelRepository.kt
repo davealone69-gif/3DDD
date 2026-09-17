@@ -7,6 +7,7 @@ import com.threedd.studio.data.local.LibraryModelEntity
 import com.threedd.studio.data.local.StudioDao
 import com.threedd.studio.data.model.AvatarModel
 import com.threedd.studio.data.model.ModelSource
+import com.threedd.studio.repair.RepairSupervisor
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -22,7 +23,8 @@ import javax.inject.Singleton
 @Singleton
 class ModelRepository @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val dao: StudioDao
+    private val dao: StudioDao,
+    private val supervisor: RepairSupervisor
 ) {
 
     private val modelsDir: File get() = File(context.filesDir, "models").apply { mkdirs() }
@@ -51,7 +53,15 @@ class ModelRepository @Inject constructor(
      * Returns the new model, or null when the source could not be read.
      */
     suspend fun import(uri: Uri, mature: Boolean = false): AvatarModel? = withContext(Dispatchers.IO) {
-        runCatching {
+        // Reading a document can fail transiently (the picker's stream closing, a slow provider).
+        // Retry through the repair supervisor so a hiccup is recovered rather than surfaced.
+        supervisor.attemptSuspend("import", listOf(RETRY_COPY)) {
+            importOnce(uri, mature)
+        }
+    }
+
+    private suspend fun importOnce(uri: Uri, mature: Boolean): AvatarModel? {
+        return runCatching {
             val name = queryDisplayName(uri) ?: "imported-${System.currentTimeMillis()}"
             val extension = name.substringAfterLast('.', "glb").lowercase()
             if (extension !in SUPPORTED_EXTENSIONS) return@runCatching null
@@ -79,7 +89,13 @@ class ModelRepository @Inject constructor(
             )
             dao.upsertModel(model.toEntity())
             model
-        }.getOrNull()
+        }.getOrElse { throw IllegalStateException("import failed: ${it.message ?: it::class.java.simpleName}") }
+    }
+
+    private val RETRY_COPY = object : RepairSupervisor.Repair {
+        override val id = "retry-copy"
+        override val description = "Re-read the picked file and retry the import"
+        override fun apply(): Boolean = true
     }
 
     /** Registers a completed scan session as a first-class model in the library. */

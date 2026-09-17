@@ -35,6 +35,7 @@ import com.threedd.studio.ui.theme.Surface2
 @Composable
 fun SettingsScreen(
     onOpenAgeGate: () -> Unit,
+    onOpenDiagnostics: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val settings by viewModel.settingsState.collectAsState()
@@ -53,6 +54,9 @@ fun SettingsScreen(
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)
         ) {
             StatusBanner(message = message, modifier = Modifier.padding(top = 16.dp), onDismiss = viewModel::consumeMessage)
+
+            SectionTitle("Diagnostics")
+            Button(onClick = onOpenDiagnostics) { Text("Diagnostics & repair") }
 
             SectionTitle("3D engine")
             val engine = viewModel.engineInfo

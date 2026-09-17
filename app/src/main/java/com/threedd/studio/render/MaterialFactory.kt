@@ -47,9 +47,21 @@ class MaterialFactory(private val engine: Engine) {
      * refuses it. A degraded material still lights and shades the model, so the viewport is
      * never blank; the failure is logged and surfaced rather than thrown at the UI.
      */
+    private var forceMinimal = false
+
+    /** Repair hook: stop trying the full shader and use the simplified material from now on. */
+    fun forceSimplified() {
+        forceMinimal = true
+        degraded = true
+        materials.values.forEach { engine.destroyMaterial(it) }
+        materials.clear()
+    }
+
     private fun variant(alphaMode: Int): Material {
         materials[alphaMode]?.let { return it }
-        val built = runCatching { buildFull(alphaMode) }
+        val built = if (forceMinimal) {
+            runCatching { buildMinimal(alphaMode) }.getOrElse { buildMinimal(alphaMode) }
+        } else runCatching { buildFull(alphaMode) }
             .getOrElse { error ->
                 android.util.Log.e(TAG, "full material failed to build; using the simplified material", error)
                 degraded = true

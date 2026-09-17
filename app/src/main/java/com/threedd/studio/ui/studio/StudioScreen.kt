@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Brush
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.Face
@@ -126,6 +127,7 @@ fun StudioScreen(
     onOpenSettings: () -> Unit,
     onOpenAgeGate: () -> Unit,
     onOpenAbout: () -> Unit,
+    onOpenDiagnostics: () -> Unit = {},
     onOpenExport: () -> Unit,
     viewModel: StudioViewModel = sessionViewModel<StudioViewModel>()
 ) {
@@ -157,6 +159,8 @@ fun StudioScreen(
                             onClick = { menuOpen = false; saveDialog = true })
                         DropdownMenuItem(text = { Text("18+ module") }, leadingIcon = { Icon(Icons.Filled.Lock, null) },
                             onClick = { menuOpen = false; onOpenAgeGate() })
+                        DropdownMenuItem(text = { Text("Diagnostics & repair") }, leadingIcon = { Icon(Icons.Filled.Build, null) },
+                            onClick = { menuOpen = false; onOpenDiagnostics() })
                         DropdownMenuItem(text = { Text("About") }, leadingIcon = { Icon(Icons.Filled.Info, null) },
                             onClick = { menuOpen = false; onOpenAbout() })
                     }
@@ -435,6 +439,22 @@ private fun AppearancePanel(state: StudioUiState, viewModel: StudioViewModel, on
                     .clickable { viewModel.updateMaterial(state.material.copy(baseColorHex = hex)) }
             )
         }
+    }
+
+    SectionTitle("Describe an avatar")
+    OutlinedTextField(
+        value = state.prompt,
+        onValueChange = viewModel::setPrompt,
+        label = { Text("e.g. cyborg, pink hair, visor, neon") },
+        modifier = Modifier.fillMaxWidth()
+    )
+    Button(
+        onClick = viewModel::generateFromPrompt,
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+    ) { Text("Generate avatar") }
+    state.promptSummary?.let {
+        Text(it, style = MaterialTheme.typography.labelSmall, color = TextSecondary,
+            modifier = Modifier.padding(top = 4.dp))
     }
 
     SectionTitle("Appearance presets")

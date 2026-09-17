@@ -2,6 +2,7 @@ package com.threedd.studio.ui.studio
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.threedd.studio.ai.PromptToAppearance
 import com.threedd.studio.audio.AudioEngine
 import com.threedd.studio.audio.VocalBank
 import com.threedd.studio.content.AgeGate
@@ -42,6 +43,8 @@ data class StudioUiState(
     val overrideModelMaterials: Boolean = true,
     val morphNames: List<String> = emptyList(),
     val appearance: AppearanceSpec = AppearanceSpec(),
+    val prompt: String = "",
+    val promptSummary: String? = null,
     val recording: Boolean = false,
     val vocals: List<VocalBank.Sample> = emptyList(),
     val matureUnlocked: Boolean = false,
@@ -177,6 +180,26 @@ class StudioViewModel @Inject constructor(
     fun resetCamera() {
         renderer.resetFraming()
         audio.play(AudioEngine.Cue.TAP)
+    }
+
+    // ---- describe an avatar in words ----
+
+    fun setPrompt(value: String) = _state.update { it.copy(prompt = value) }
+
+    /**
+     * Builds an avatar from a written description. The parse is on device, so this is free and
+     * works with no network and no model installed.
+     */
+    fun generateFromPrompt() {
+        val text = _state.value.prompt
+        if (text.isBlank()) {
+            _state.update { it.copy(error = "Describe the avatar first, for example \"cyborg with pink hair and a visor\"") }
+            return
+        }
+        val spec = PromptToAppearance.parse(text, _state.value.appearance)
+        updateAppearance(spec)
+        _state.update { it.copy(promptSummary = PromptToAppearance.summarise(spec), error = null, status = "Generated from description") }
+        audio.play(AudioEngine.Cue.CONFIRM)
     }
 
     // ---- vocal takes ----
