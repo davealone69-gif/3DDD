@@ -1,5 +1,6 @@
 package com.threedd.studio.scan
 
+import com.threedd.studio.data.avatar.TriangleMesh
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -19,16 +20,6 @@ class VisualHull(
     private val voxels = BooleanArray(resolution * resolution * resolution)
 
     data class View(val mask: BooleanArray, val width: Int, val height: Int, val azimuthRadians: Float)
-
-    data class Mesh(
-        val positions: FloatArray,
-        val normals: FloatArray,
-        val uvs: FloatArray,
-        val indices: IntArray
-    ) {
-        val vertexCount get() = positions.size / 3
-        val triangleCount get() = indices.size / 3
-    }
 
     fun carve(views: List<View>) {
         voxels.fill(true)
@@ -71,7 +62,7 @@ class VisualHull(
         return voxels[(iz * resolution + iy) * resolution + ix]
     }
 
-    fun buildMesh(): Mesh {
+    fun buildMesh(): TriangleMesh {
         val positions = ArrayList<Float>()
         val normals = ArrayList<Float>()
         val uvs = ArrayList<Float>()
@@ -136,7 +127,7 @@ class VisualHull(
             }
         }
 
-        return Mesh(
+        return TriangleMesh(
             positions.toFloatArray(),
             normals.toFloatArray(),
             uvs.toFloatArray(),

@@ -83,11 +83,24 @@ class ModelRepository @Inject constructor(
     }
 
     /** Registers a completed scan session as a first-class model in the library. */
-    suspend fun registerScan(id: String, displayName: String, file: File, mature: Boolean = false): AvatarModel {
+    suspend fun registerScan(id: String, displayName: String, file: File, mature: Boolean = false): AvatarModel =
+        registerGenerated(id, displayName, file, ModelSource.SCANNED, mature)
+
+    /** Registers an avatar generated from an uploaded image. */
+    suspend fun registerPhoto(id: String, displayName: String, file: File, mature: Boolean = false): AvatarModel =
+        registerGenerated(id, displayName, file, ModelSource.PHOTO, mature)
+
+    private suspend fun registerGenerated(
+        id: String,
+        displayName: String,
+        file: File,
+        source: ModelSource,
+        mature: Boolean
+    ): AvatarModel {
         val model = AvatarModel(
             id = id,
             displayName = displayName,
-            source = ModelSource.SCANNED,
+            source = source,
             location = Uri.fromFile(file).toString(),
             sizeBytes = file.length(),
             importedAtEpochMs = System.currentTimeMillis(),
@@ -106,6 +119,16 @@ class ModelRepository @Inject constructor(
     }
 
     fun scanOutputFile(name: String): File = File(scansDir, name)
+
+    /** True when the picked document is a still image that should become an avatar. */
+    fun isImage(uri: Uri): Boolean {
+        val mime = runCatching { context.contentResolver.getType(uri) }.getOrNull()
+        if (mime != null && mime.startsWith("image/")) return true
+        val name = queryDisplayName(uri)?.lowercase() ?: return false
+        return IMAGE_EXTENSIONS.any { name.endsWith(it) }
+    }
+
+    companion object {
 
     private fun queryDisplayName(uri: Uri): String? =
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
@@ -143,6 +166,15 @@ class ModelRepository @Inject constructor(
 
     companion object {
         val SUPPORTED_EXTENSIONS = setOf("glb", "gltf")
+
+        /** Still-image formats the photo avatar builder accepts. */
+        val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "heic", "heif", "bmp")
+
+        /** MIME types offered by the import picker. */
+        val IMPORT_MIME_TYPES = arrayOf(
+            "model/gltf-binary", "model/gltf+json", "application/octet-stream",
+            "image/jpeg", "image/png", "image/webp"
+        )
 
         /** Built-in rigs are generated GLB assets shipped in the APK. */
         val builtInModels: List<AvatarModel> = listOf(

@@ -3,7 +3,7 @@ package com.threedd.studio.data.model
 import android.net.Uri
 
 /** Where a model came from. Drives which tab of the library it appears under. */
-enum class ModelSource { BUILTIN, IMPORTED, SCANNED }
+enum class ModelSource { BUILTIN, IMPORTED, SCANNED, PHOTO }
 
 /** A renderable avatar/model the studio can load. */
 data class AvatarModel(

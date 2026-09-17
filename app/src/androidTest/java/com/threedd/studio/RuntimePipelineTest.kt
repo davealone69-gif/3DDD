@@ -179,6 +179,32 @@ class RuntimePipelineTest {
         pipeline.clearSession(session)
     }
 
+    @Test
+    fun buildsAnAvatarFromAnUploadedImage() {
+        // A JPEG silhouette on a plain background, exactly what the import flow accepts.
+        val bitmap = Bitmap.createBitmap(200, 260, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.rgb(245, 245, 245))
+        val paint = Paint().apply { color = Color.rgb(180, 120, 90); isAntiAlias = false }
+        canvas.drawOval(60f, 20f, 140f, 240f, paint)
+        val image = File(targetContext.cacheDir, "upload.jpg")
+        image.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+        bitmap.recycle()
+
+        val builder = com.threedd.studio.scan.PhotoAvatarBuilder(targetContext)
+        val built = builder.build(android.net.Uri.fromFile(image), "upload-avatar", 0.25f)
+        assertNotNull("image did not produce an avatar", built)
+        assertTrue("mesh has no triangles", built!!.triangleCount > 100)
+        assertTrue("glb is empty", built.file.length() > 1024)
+
+        // the written GLB must be loadable by the same reader the studio uses
+        val document = com.threedd.studio.data.gltf.GltfDocument.parse(built.file.readBytes())
+        assertNotNull("generated glb did not parse", document)
+        assertTrue(document!!.primitives.isNotEmpty())
+        assertTrue(document.images.isNotEmpty())
+        assertTrue(document.materials[0].baseColorTexture >= 0)
+    }
+
     /** Instrumented tests run on a background thread, so a tiny blocking bridge is enough. */
     private fun <T> runBlockingExport(block: suspend () -> T): T =
         kotlinx.coroutines.runBlocking { block() }

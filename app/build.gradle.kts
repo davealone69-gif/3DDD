@@ -90,6 +90,7 @@ dependencies {
     implementation(libs.filament.android)
     implementation(libs.filamat)
 
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)

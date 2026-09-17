@@ -1,5 +1,6 @@
 package com.threedd.studio.scan
 
+import com.threedd.studio.data.avatar.TriangleMesh
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.ByteBuffer
@@ -17,7 +18,7 @@ object GltfMeshWriter {
     private const val CHUNK_JSON = 0x4E4F534A
     private const val CHUNK_BIN = 0x004E4942
 
-    fun write(mesh: VisualHull.Mesh, texturePng: ByteArray?, name: String, destination: File) {
+    fun write(mesh: TriangleMesh, texturePng: ByteArray?, name: String, destination: File) {
         val positions = floatBytes(mesh.positions)
         val normals = floatBytes(mesh.normals)
         val uvs = floatBytes(mesh.uvs)
@@ -109,7 +110,7 @@ object GltfMeshWriter {
     }
 
     private fun writeGlb(
-        mesh: VisualHull.Mesh,
+        mesh: TriangleMesh,
         bin: ByteArray,
         bufferViews: JSONArray,
         accessors: JSONArray,
