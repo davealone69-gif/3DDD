@@ -41,7 +41,7 @@ class RuntimePipelineTest {
 
     @Before
     fun setUp() {
-        renderer = StudioRenderer(targetContext)
+        renderer = StudioRenderer(targetContext, com.threedd.studio.repair.RepairSupervisor(targetContext))
         exports = ExportManager(targetContext)
         // Probe whether this driver can create Filament resources at all. A software GLES2
         // context cannot, and the failure says nothing about the application code.
