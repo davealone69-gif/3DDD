@@ -12,6 +12,8 @@ import com.google.android.filament.SwapChainFlags
 import com.google.android.filament.View
 import com.google.android.filament.Viewport
 import com.google.android.filament.android.UiHelper
+import com.threedd.studio.data.avatar.AppearanceSpec
+import com.threedd.studio.data.avatar.PartBuilder
 import com.threedd.studio.data.model.AvatarModel
 import com.threedd.studio.data.model.LightState
 import com.threedd.studio.data.model.MaterialState
@@ -34,6 +36,7 @@ class StudioRenderer(val context: Context) {
     val materials = MaterialFactory(engine)
     private val environment = StudioEnvironment(engine, scene)
     val models = ModelLoader(context, engine, scene, materials)
+    private val partLayer = PartLayer(engine, scene, materials)
     val orbit = OrbitCamera(camera)
 
     val uiHelper = UiHelper(UiHelper.ContextErrorPolicy.DONT_CHECK)
@@ -140,6 +143,7 @@ class StudioRenderer(val context: Context) {
             environment.install(lightState)
             lastBounds = models.bounds()
             fitCamera()
+            applyAppearance(lastAppearance)
         } catch (t: Throwable) {
             android.util.Log.e(TAG, "failed to prepare the scene", t)
             lastError = t.message ?: t::class.java.simpleName
@@ -151,6 +155,64 @@ class StudioRenderer(val context: Context) {
     private var lastBounds: FloatArray? = null
 
     /** Scales the model to fit the current viewport, accounting for its aspect ratio. */
+    private var lastAppearance = AppearanceSpec()
+
+    /**
+     * Rebuilds the wearables from [appearance] and pushes the skin tone onto the avatar
+     * material. Parts are sized from the loaded rig's proportions, so they fit any model.
+     */
+    fun applyAppearance(appearance: AppearanceSpec) {
+        lastAppearance = appearance
+        val metrics = PartBuilder.RigMetrics.fromBounds(lastBounds ?: models.bounds())
+        val glow = appearance.glow.coerceIn(0f, 1f)
+
+        val specs = listOf(
+            PartLayer.Spec(
+                PartBuilder.hair(appearance.hairStyle, metrics),
+                MaterialState(baseColorHex = appearance.hairColorHex, metallic = 0.05f, roughness = 0.42f),
+                castShadows = false
+            ),
+            PartLayer.Spec(
+                PartBuilder.eyes(appearance.eyeColorHex, metrics),
+                MaterialState(baseColorHex = appearance.eyeColorHex, metallic = 0.1f, roughness = 0.12f)
+            ),
+            PartLayer.Spec(
+                PartBuilder.accessory(appearance.accessory, metrics),
+                MaterialState(baseColorHex = appearance.accentColorHex, metallic = 0.85f, roughness = 0.2f)
+            ),
+            PartLayer.Spec(
+                PartBuilder.augment(appearance.augment, metrics),
+                MaterialState(
+                    baseColorHex = "#4A5266", metallic = 1f, roughness = 0.26f,
+                    emissiveHex = appearance.accentColorHex, emissiveIntensity = glow * 3f
+                ),
+                castShadows = true
+            ),
+            PartLayer.Spec(
+                PartBuilder.outfit(appearance.outfit, metrics),
+                MaterialState(baseColorHex = appearance.outfitColorHex, metallic = 0.12f, roughness = 0.6f)
+            ),
+            PartLayer.Spec(
+                PartBuilder.tattoo(appearance.tattoo, metrics),
+                MaterialState(
+                    baseColorHex = "#121A2B", metallic = 0.2f, roughness = 0.35f,
+                    emissiveHex = appearance.accentColorHex, emissiveIntensity = glow * 2.5f
+                )
+            )
+        )
+        partLayer.rebuild(specs)
+        setMaterial(
+            MaterialState(
+                baseColorHex = appearance.skinToneHex,
+                metallic = 0.05f,
+                roughness = 0.55f,
+                emissiveHex = "#000000",
+                emissiveIntensity = 0f
+            ),
+            overrideModelMaterials = true
+        )
+    }
+
     /** Re-frames the loaded model to fill the viewport. */
     fun resetFraming() {
         orbit.reset()
@@ -243,6 +305,7 @@ class StudioRenderer(val context: Context) {
         uiHelper.detach()
         headlessSwapChain?.let { engine.destroySwapChain(it) }
         headlessSwapChain = null
+        partLayer.destroy()
         models.destroy()
         materials.destroy()
         environment.destroy()

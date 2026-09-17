@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.threedd.studio.audio.AudioEngine
 import com.threedd.studio.content.AgeGate
+import com.threedd.studio.data.avatar.AppearanceSpec
 import com.threedd.studio.data.model.AnimationClip
 import com.threedd.studio.data.model.AvatarDesign
 import com.threedd.studio.data.model.AvatarModel
@@ -39,6 +40,7 @@ data class StudioUiState(
     val loop: Boolean = true,
     val overrideModelMaterials: Boolean = true,
     val morphNames: List<String> = emptyList(),
+    val appearance: AppearanceSpec = AppearanceSpec(),
     val matureUnlocked: Boolean = false,
     val loading: Boolean = false,
     val status: String? = null,
@@ -100,6 +102,7 @@ class StudioViewModel @Inject constructor(
             }
             renderer.setMaterial(_state.value.material, _state.value.overrideModelMaterials)
             renderer.setMorphWeights(_state.value.morphWeights)
+            renderer.applyAppearance(_state.value.appearance)
             val clips = renderer.models.animations()
             _state.update {
                 it.copy(model = model, loading = false, animations = clips,
@@ -170,6 +173,12 @@ class StudioViewModel @Inject constructor(
     fun resetCamera() {
         renderer.resetFraming()
         audio.play(AudioEngine.Cue.TAP)
+    }
+
+    /** Applies a customisation change: wearables rebuild, skin tone goes on the material. */
+    fun updateAppearance(appearance: AppearanceSpec) {
+        _state.update { it.copy(appearance = appearance, material = it.material.copy(baseColorHex = appearance.skinToneHex)) }
+        renderer.applyAppearance(appearance)
     }
 
     /** Drives one morph target directly, used by the body sliders. */

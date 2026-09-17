@@ -176,6 +176,7 @@ class ModelRepository @Inject constructor(
 
         /** Built-in rigs are generated GLB assets shipped in the APK. */
         val builtInModels: List<AvatarModel> = listOf(
+            AvatarModel("builtin_studio", "Studio avatar", ModelSource.BUILTIN, "models/studio_avatar.glb"),
             AvatarModel("builtin_female", "Female base model", ModelSource.BUILTIN, "models/female.glb"),
             AvatarModel("builtin_male", "Male base model", ModelSource.BUILTIN, "models/male.glb"),
             AvatarModel("builtin_cyborg", "Cyborg base model", ModelSource.BUILTIN, "models/cyborg.glb"),

@@ -24,6 +24,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Brush
+import androidx.compose.material.icons.filled.Checkroom
+import androidx.compose.material.icons.filled.Diamond
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Close
@@ -72,6 +78,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.threedd.studio.data.avatar.AppearanceSpec
 import com.threedd.studio.data.model.Presets
 import com.threedd.studio.data.repository.ModelRepository
 import com.threedd.studio.ui.components.FilamentViewport
@@ -90,9 +97,14 @@ import com.threedd.studio.ui.theme.TextSecondary
 /** Left rail entries. Each maps to a real capability rather than a decorative label. */
 private enum class StudioCategory(val label: String, val icon: ImageVector) {
     APPEARANCE("Appearance", Icons.Filled.Person),
+    HAIR("Hair", Icons.Filled.Brush),
+    FACE("Face", Icons.Filled.Face),
+    EYES("Eyes", Icons.Filled.RemoveRedEye),
     BODY("Body", Icons.Filled.Accessibility),
-    MATERIAL("Material", Icons.Filled.Palette),
-    LIGHT("Light", Icons.Filled.LightMode),
+    CLOTHING("Clothing", Icons.Filled.Checkroom),
+    ACCESSORIES("Accessories", Icons.Filled.Diamond),
+    AUGMENTS("Augments", Icons.Filled.Bolt),
+    TATTOOS("Tattoos", Icons.Filled.Palette),
     MOTION("Motion", Icons.Filled.Movie),
     IMPORTS("Import", Icons.Filled.FolderOpen),
     SCAN("Scan", Icons.Filled.PhotoCamera),
@@ -369,9 +381,14 @@ private fun InspectorPanel(
 
         when (category) {
             StudioCategory.APPEARANCE -> AppearancePanel(state, viewModel, onOpenLibrary)
+            StudioCategory.HAIR -> HairPanel(state, viewModel)
+            StudioCategory.FACE -> FacePanel(state, viewModel)
+            StudioCategory.EYES -> EyesPanel(state, viewModel)
             StudioCategory.BODY -> BodyPanel(state, viewModel)
-            StudioCategory.MATERIAL -> MaterialPanel(state, viewModel)
-            StudioCategory.LIGHT -> LightPanel(state, viewModel, onOpenLighting)
+            StudioCategory.CLOTHING -> ClothingPanel(state, viewModel)
+            StudioCategory.ACCESSORIES -> AccessoriesPanel(state, viewModel)
+            StudioCategory.AUGMENTS -> AugmentsPanel(state, viewModel)
+            StudioCategory.TATTOOS -> TattoosPanel(state, viewModel)
             StudioCategory.MOTION -> MotionPanel(state, viewModel)
             else -> {
                 Text("This entry opens another screen.", color = TextSecondary)
@@ -532,6 +549,112 @@ private fun MotionPanel(state: StudioUiState, viewModel: StudioViewModel) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun OptionRow(label: String, options: List<Pair<String, String>>, selected: String, onPick: (String) -> Unit) {
+    SectionTitle(label)
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        items(options) { (id, text) ->
+            PresetChip(text, selected == id, onClick = { onPick(id) })
+        }
+    }
+}
+
+@Composable
+private fun ColourRow(label: String, colours: List<String>, selected: String, onPick: (String) -> Unit) {
+    SectionTitle(label)
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(colours) { hex ->
+            val active = selected.equals(hex, ignoreCase = true)
+            Box(
+                Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(Color(android.graphics.Color.parseColor(hex)))
+                    .border(
+                        if (active) 2.dp else 1.dp,
+                        if (active) NeonCyan else Color.White.copy(alpha = 0.2f),
+                        CircleShape
+                    )
+                    .clickable { onPick(hex) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun HairPanel(state: StudioUiState, viewModel: StudioViewModel) {
+    val a = state.appearance
+    OptionRow("Hair style", AppearanceSpec.HairStyle.entries.map { it.id to it.label },
+        a.hairStyle) { viewModel.updateAppearance(a.copy(hairStyle = it)) }
+    ColourRow("Hair colour", a.palettes.getValue("Hair"), a.hairColorHex) {
+        viewModel.updateAppearance(a.copy(hairColorHex = it))
+    }
+}
+
+@Composable
+private fun FacePanel(state: StudioUiState, viewModel: StudioViewModel) {
+    val a = state.appearance
+    OptionRow("Face shape", AppearanceSpec.FaceShape.entries.map { it.id to it.label },
+        a.faceShape) { viewModel.updateAppearance(a.copy(faceShape = it)) }
+    OptionRow("Style", AppearanceSpec.STYLES.map { it to it }, a.style) {
+        viewModel.updateAppearance(a.copy(style = it))
+    }
+    SectionTitle("Skin tone")
+    ColourRow("Skin", a.palettes.getValue("Skin"), a.skinToneHex) {
+        viewModel.updateAppearance(a.copy(skinToneHex = it))
+    }
+}
+
+@Composable
+private fun EyesPanel(state: StudioUiState, viewModel: StudioViewModel) {
+    val a = state.appearance
+    ColourRow("Eye colour", a.palettes.getValue("Eyes"), a.eyeColorHex) {
+        viewModel.updateAppearance(a.copy(eyeColorHex = it))
+    }
+    ColourRow("Accent / glow colour", a.palettes.getValue("Accent"), a.accentColorHex) {
+        viewModel.updateAppearance(a.copy(accentColorHex = it))
+    }
+    LabeledSlider("Glow strength", a.glow, 0f..1f, onValueChange = {
+        viewModel.updateAppearance(a.copy(glow = it))
+    })
+}
+
+@Composable
+private fun ClothingPanel(state: StudioUiState, viewModel: StudioViewModel) {
+    val a = state.appearance
+    OptionRow("Outfit", AppearanceSpec.Outfit.entries.map { it.id to it.label },
+        a.outfit) { viewModel.updateAppearance(a.copy(outfit = it)) }
+    ColourRow("Fabric colour", a.palettes.getValue("Accent") + a.palettes.getValue("Hair").take(4),
+        a.outfitColorHex) { viewModel.updateAppearance(a.copy(outfitColorHex = it)) }
+}
+
+@Composable
+private fun AccessoriesPanel(state: StudioUiState, viewModel: StudioViewModel) {
+    val a = state.appearance
+    OptionRow("Accessory", AppearanceSpec.Accessory.entries.map { it.id to it.label },
+        a.accessory) { viewModel.updateAppearance(a.copy(accessory = it)) }
+}
+
+@Composable
+private fun AugmentsPanel(state: StudioUiState, viewModel: StudioViewModel) {
+    val a = state.appearance
+    OptionRow("Augment", AppearanceSpec.Augment.entries.map { it.id to it.label },
+        a.augment) { viewModel.updateAppearance(a.copy(augment = it)) }
+    LabeledSlider("Glow strength", a.glow, 0f..1f, onValueChange = {
+        viewModel.updateAppearance(a.copy(glow = it))
+    })
+}
+
+@Composable
+private fun TattoosPanel(state: StudioUiState, viewModel: StudioViewModel) {
+    val a = state.appearance
+    OptionRow("Tattoo", AppearanceSpec.Tattoo.entries.map { it.id to it.label },
+        a.tattoo) { viewModel.updateAppearance(a.copy(tattoo = it)) }
+    ColourRow("Ink colour", a.palettes.getValue("Accent"), a.accentColorHex) {
+        viewModel.updateAppearance(a.copy(accentColorHex = it))
     }
 }
 
