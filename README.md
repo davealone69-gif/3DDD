@@ -55,3 +55,9 @@ Scans, imported models, recordings and exports never leave the device.
 ## Licences
 
 Filament, gltfio and filamat are Apache-2.0. The generated base rigs are original work shipped under CC0.
+
+## Continuous build
+
+A GitHub Actions workflow (`.github/workflows/android.yml`) builds the debug APK on every push
+to `main`, runs the unit tests, and uploads the APK as the `3DoubleD-debug-apk` artifact.
+The artifact can be downloaded from the run page or with `gh run download`.
