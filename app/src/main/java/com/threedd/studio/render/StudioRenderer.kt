@@ -143,8 +143,8 @@ class StudioRenderer(val context: Context, private val supervisor: RepairSupervi
             repair("simplified-material", "Fall back to the simplified shader and retry") {
                 materials.forceSimplified(); true
             },
-            repair("clear-scene", "Empty the scene and retry") {
-                scene.removeAllEntities(); true
+            repair("reset-framing", "Reset the camera framing and bounds, then retry") {
+                orbit.reset(); lastBounds = null; true
             }
         )
         val loaded = supervisor.attempt("render-load", repairs) { models.load(model) }
