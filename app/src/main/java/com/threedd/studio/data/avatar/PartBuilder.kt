@@ -442,12 +442,12 @@ object PartBuilder {
             val stations = ArrayList<Pair<Float, Float>>()
             for (i in 0..capRings) {
                 val a = (PI / 2) * i / capRings
-                stations.add(Pair(-radius * cos(a), radius * sin(a)))
+                stations.add(Pair((-radius * cos(a)).toFloat(), (radius * sin(a)).toFloat()))
             }
             stations.add(Pair(0f, radius))
             for (i in 0..capRings) {
                 val a = (PI / 2) * i / capRings
-                stations.add(Pair(length + radius * sin(a), radius * cos(a)))
+                stations.add(Pair((length + radius * sin(a)).toFloat(), (radius * cos(a)).toFloat()))
             }
 
             val grid = ArrayList<Int>()
