@@ -54,9 +54,11 @@ class GltfDocumentTest {
         assertTrue(GltfDocument.PATH_ROTATION in paths)
         assertTrue(GltfDocument.PATH_TRANSLATION in paths)
         assertTrue(GltfDocument.PATH_SCALE in paths)
-        // CUBICSPLINE keys are triples, so 3 keys carry 9 values
+        // For CUBICSPLINE the output accessor count is keys * 3 (in-tangent, value,
+        // out-tangent), each a VEC3 here, so 3 keys carry 3 * 3 * 3 = 27 floats.
         val cubic = anim.channels.first { it.interpolation == GltfDocument.INTERP_CUBICSPLINE }
-        assertEquals(9, cubic.values.size)
+        assertEquals(27, cubic.values.size)
+        assertEquals(3, cubic.keyCount)
     }
 
     @Test

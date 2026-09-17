@@ -76,7 +76,8 @@ class AnimationSamplerTest {
         )
         val c = channel(GltfDocument.PATH_TRANSLATION, GltfDocument.INTERP_CUBICSPLINE,
             floatArrayOf(0f, 1f), values, 3)
-        assertEquals(2.5f, AnimationSampler.evaluate(c, 0.5f)!![0], 1e-4f)
+        // Hermite basis at u=0.5: h00=p0 term 0, h10*m0 = 0.125*8, h01*p1 = 0.5*10
+        assertEquals(6.0f, AnimationSampler.evaluate(c, 0.5f)!![0], 1e-4f)
     }
 
     @Test
