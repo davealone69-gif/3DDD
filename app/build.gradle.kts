@@ -88,8 +88,6 @@ dependencies {
     implementation(libs.camera.view)
 
     implementation(libs.filament.android)
-    implementation(libs.filament.utils)
-    implementation(libs.gltfio)
     implementation(libs.filamat)
 
     implementation(libs.kotlinx.coroutines.android)

@@ -11,8 +11,9 @@ import, scan, export or audio paths is stubbed or simulated.
 | --- | --- |
 | Renderer | Filament engine with a `UiHelper`-managed swap chain and a Compose frame-clock render loop |
 | Materials | Compiled on device by **filamat** (`MaterialBuilder`) from GLSL source in `MaterialFactory`; no pre-baked `.filamat` blobs are shipped |
-| glTF loading | **gltfio** `AssetLoader` + `ResourceLoader` with a `JitShaderProvider`, supporting morph targets and animation clips |
+| glTF loading | In-project glTF 2.0 / GLB reader (`data/gltf/GltfDocument.kt`): `.glb` containers, embedded and data-URI buffers, integer-normalised accessors, node transforms baked in, per-primitive morph targets and material factors. Geometry is uploaded straight into Filament vertex/index buffers. |
 | Base rigs | Four humanoid GLBs (`female`, `male`, `androgynous`, `cyborg`) generated at authoring time with real geometry, UVs, normals and seven morph targets each |
+| Morphing | Evaluated on the CPU and re-uploaded to the position buffer, so any target count works (Filament's `MorphTargetBuffer` JNI call caps the update size below a real character mesh) |
 | Scan | Shape-from-silhouette: CameraX capture → Otsu/border background segmentation → voxel carving → surfaced textured GLB |
 | Export | PNG (offscreen `RenderTarget` + `readPixels`), turntable MP4 (MediaCodec surface render + MediaMuxer), animated GIF (in-house median-cut + LZW encoder), baked GLB (morph weights written into the binary buffer) |
 | Audio | Real-time generative ambient pad (`AudioTrack` stream synthesis), synthesised interface cues, vocal recording and pitch-shifted playback |
@@ -54,7 +55,15 @@ Scans, imported models, recordings and exports never leave the device.
 
 ## Licences
 
-Filament, gltfio and filamat are Apache-2.0. The generated base rigs are original work shipped under CC0.
+Filament and filamat are Apache-2.0. The generated base rigs are original work shipped under CC0.
+
+## Scope of the glTF reader
+
+The bundled reader covers what the studio needs: static triangle geometry, per-primitive
+material factors, vertex colours, morph targets and baked node transforms. It deliberately
+does **not** implement skeletal skinning, glTF animation clips or texture-map sampling -
+imported models therefore arrive as static meshes shaded by the studio PBR material. The
+built-in rigs and every studio feature work through the same path.
 
 ## Continuous build
 

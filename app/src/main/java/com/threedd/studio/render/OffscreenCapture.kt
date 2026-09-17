@@ -37,7 +37,7 @@ class OffscreenCapture(private val renderer: StudioRenderer) {
         renderer.orbit.apply(width.toDouble() / height.toDouble())
 
         // beginFrame needs a swap chain; render into the target and then discard the frame.
-        val rendered = renderer.renderOffscreen(frameTimeNanos)
+        val rendered = renderer.renderOffscreen(width, height, frameTimeNanos)
         if (!rendered) {
             renderer.view.renderTarget = previousTarget
             renderer.view.viewport = previousViewport
@@ -48,13 +48,15 @@ class OffscreenCapture(private val renderer: StudioRenderer) {
 
         val bytes = ByteBuffer.allocateDirect(width * height * 4)
         val latch = CountDownLatch(1)
+        // Signature order is: storage, format, type, alignment, left, top, stride, handler, callback.
         val descriptor = Texture.PixelBufferDescriptor(
             bytes,
             Texture.Format.RGBA,
             Texture.Type.UBYTE,
-            0, 0, 0, 0, 0, 0,
-            Handler(Looper.getMainLooper())
-        ) { latch.countDown() }
+            1, 0, 0, width * 4,
+            Handler(Looper.getMainLooper()),
+            Runnable { latch.countDown() }
+        )
 
         renderer.renderer.readPixels(0, 0, width, height, descriptor)
         renderer.engine.flushAndWait()

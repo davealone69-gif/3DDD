@@ -8,6 +8,7 @@ import com.google.android.filament.Engine
 import com.google.android.filament.Renderer
 import com.google.android.filament.Scene
 import com.google.android.filament.SwapChain
+import com.google.android.filament.SwapChainFlags
 import com.google.android.filament.View
 import com.google.android.filament.Viewport
 import com.google.android.filament.android.UiHelper
@@ -57,7 +58,7 @@ class StudioRenderer(private val context: Context) {
         }
         renderer.clearOptions = Renderer.ClearOptions().apply {
             clear = true
-            clearColor = floatArrayOf(0.02f, 0.024f, 0.043f, 1f)
+            clearColor = doubleArrayOf(0.02, 0.024, 0.043, 1.0)
         }
         uiHelper.setRenderCallback(object : UiHelper.RendererCallback {
             override fun onNativeWindowChanged(surface: Surface) {
@@ -117,11 +118,12 @@ class StudioRenderer(private val context: Context) {
     fun setMorphWeights(weights: Map<String, Float>) = models.setMorphWeights(weights)
 
     /**
-     * Renders one frame while a RenderTarget is bound. Used by the offscreen capture path.
-     * A throw-away swap chain target is used by beginFrame, but nothing is presented.
+     * Renders one frame into the currently bound RenderTarget. A headless swap chain of the
+     * requested size satisfies beginFrame(); nothing is presented to the screen.
      */
-    fun renderOffscreen(frameTimeNanos: Long): Boolean {
-        if (renderer.beginFrame(offscreenSwapChain(frameTimeNanos), frameTimeNanos)) {
+    fun renderOffscreen(width: Int, height: Int, frameTimeNanos: Long): Boolean {
+        val swap = ensureHeadlessSwapChain(width, height)
+        if (renderer.beginFrame(swap, frameTimeNanos)) {
             renderer.render(view)
             renderer.endFrame()
             return true
@@ -130,11 +132,21 @@ class StudioRenderer(private val context: Context) {
     }
 
     private var headlessSwapChain: SwapChain? = null
+    private var headlessWidth = 0
+    private var headlessHeight = 0
 
-    private fun offscreenSwapChain(frameTimeNanos: Long): SwapChain {
-        headlessSwapChain?.let { return it }
-        val created = engine.createSwapChain(0L)
+    private fun ensureHeadlessSwapChain(width: Int, height: Int): SwapChain {
+        val existing = headlessSwapChain
+        if (existing != null && headlessWidth == width && headlessHeight == height) return existing
+        existing?.let { engine.destroySwapChain(it) }
+        val created = engine.createSwapChain(
+            width.coerceAtLeast(1),
+            height.coerceAtLeast(1),
+            SwapChainFlags.CONFIG_DEFAULT
+        )
         headlessSwapChain = created
+        headlessWidth = width
+        headlessHeight = height
         return created
     }
 
