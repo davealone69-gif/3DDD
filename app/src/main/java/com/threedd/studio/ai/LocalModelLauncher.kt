@@ -1,7 +1,11 @@
 package com.threedd.studio.ai
 
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -170,11 +174,37 @@ class LocalModelLauncher @Inject constructor(@ApplicationContext private val con
     fun installedModels(): List<File> =
         modelsDir.listFiles { f -> f.extension.equals("gguf", true) }?.sortedBy { it.name } ?: emptyList()
 
-    /** The exact command a user can run themselves when the platform blocks the app from doing it. */
-    fun manualCommand(): String {
-        val binary = _status.value.binaryPath ?: "llama-server"
-        val model = _status.value.modelPath ?: "${modelsDir.absolutePath}/your-model.gguf"
-        return "$binary -m $model --host 127.0.0.1 --port ${portOf(_status.value.endpoint)}"
+    /**
+     * Copies a model into public Downloads so another app can read it.
+     *
+     * This is the step that makes the manual route work at all: the app's own files directory
+     * is private to its UID, so Termux cannot open a model stored there. Downloads is shared.
+     */
+    fun exportModelToDownloads(file: File): String? = runCatching {
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, file.name)
+            put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/3DoubleD")
+            }
+        }
+        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: return@runCatching null
+        context.contentResolver.openOutputStream(uri)?.use { output ->
+            file.inputStream().use { input -> input.copyTo(output) }
+        } ?: return@runCatching null
+        "/sdcard/Download/3DoubleD/${file.name}"
+    }.getOrNull()
+
+    /**
+     * The command to run in Termux when the platform blocks the app from launching the server.
+     * [sharedPath] must point at the copy in Downloads, not at app-private storage.
+     */
+    fun manualCommand(sharedPath: String? = null): String {
+        val model = sharedPath
+            ?: _status.value.modelPath?.takeIf { it.startsWith("/sdcard") || it.startsWith("/storage") }
+            ?: "/sdcard/Download/3DoubleD/your-model.gguf"
+        return "llama-server -m $model --host 127.0.0.1 --port ${portOf(_status.value.endpoint)}"
     }
 
     private fun findBinary(): File? {

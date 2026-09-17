@@ -147,10 +147,21 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
                     style = MaterialTheme.typography.labelSmall, color = TextSecondary,
                     modifier = Modifier.padding(top = 6.dp))
             }
-            if (state.manualCommand.isNotBlank() && !state.server.running) {
-                Text("If the platform blocks the launch, run this yourself:",
+            OutlinedButton(
+                onClick = viewModel::exportModelForTermux,
+                modifier = Modifier.padding(top = 8.dp)
+            ) { Text("Copy model to Downloads (for Termux)") }
+            state.exportedPath?.let {
+                Text("Copied to $it", style = MaterialTheme.typography.labelSmall, color = NeonCyan)
+            }
+
+            if (!state.server.running) {
+                Text(
+                    "Termux cannot read the app's private storage, so the model must sit in Downloads. " +
+                        "In Termux: pkg install llama-cpp, then run:",
                     style = MaterialTheme.typography.labelSmall, color = TextSecondary,
-                    modifier = Modifier.padding(top = 8.dp))
+                    modifier = Modifier.padding(top = 8.dp)
+                )
                 Text(state.manualCommand, style = MaterialTheme.typography.labelSmall, color = NeonCyan)
             }
 

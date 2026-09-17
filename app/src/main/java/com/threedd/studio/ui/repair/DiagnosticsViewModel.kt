@@ -29,7 +29,8 @@ data class DiagnosticsUiState(
     val localModelReachable: Boolean = false,
     val server: LocalModelLauncher.Status = LocalModelLauncher.Status(),
     val installedModels: List<String> = emptyList(),
-    val manualCommand: String = ""
+    val manualCommand: String = "",
+    val exportedPath: String? = null
 )
 
 @HiltViewModel
@@ -139,6 +140,22 @@ class DiagnosticsViewModel @Inject constructor(
         viewModelScope.launch {
             launcher.importModel(uri)
             _state.update { it.copy(installedModels = launcher.installedModels().map { f -> f.name }) }
+        }
+    }
+
+    /** Puts the newest model where Termux can read it, and updates the command shown. */
+    fun exportModelForTermux() {
+        val model = launcher.installedModels().firstOrNull()
+        if (model == null) {
+            _state.update { it.copy(manualCommand = "Import a .gguf first.") }
+            return
+        }
+        val shared = launcher.exportModelToDownloads(model)
+        _state.update {
+            it.copy(
+                exportedPath = shared,
+                manualCommand = launcher.manualCommand(shared)
+            )
         }
     }
 
