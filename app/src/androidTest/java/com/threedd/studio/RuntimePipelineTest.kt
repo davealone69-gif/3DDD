@@ -105,14 +105,13 @@ class RuntimePipelineTest {
         renderer.setMorphWeights(mapOf("widen" to 0.5f))
         renderer.setMorphWeights(emptyMap())
         renderer.setMaterial(
-            MaterialState(baseline(), metallic = 1f, roughness = 0.1f, emissiveHex = "#22E4FF", emissiveIntensity = 3f),
+            MaterialState(baseColorHex = "#C0C8D8", metallic = 1f, roughness = 0.1f,
+                emissiveHex = "#22E4FF", emissiveIntensity = 3f),
             overrideModelMaterials = true
         )
         renderer.useModelMaterials()
         assertTrue(renderer.models.triangleCount > 0)
     }
-
-    private fun baseline() = MaterialState()
 
     @Test
     fun rendersAVisibleOffscreenFrame() {
