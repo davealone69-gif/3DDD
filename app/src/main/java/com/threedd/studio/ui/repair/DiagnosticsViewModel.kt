@@ -30,7 +30,8 @@ data class DiagnosticsUiState(
     val server: LocalModelLauncher.Status = LocalModelLauncher.Status(),
     val installedModels: List<String> = emptyList(),
     val manualCommand: String = "",
-    val exportedPath: String? = null
+    val exportedPath: String? = null,
+    val endpointDraft: String = ""
 )
 
 @HiltViewModel
@@ -130,6 +131,20 @@ class DiagnosticsViewModel @Inject constructor(
     fun stopServer() {
         launcher.stop()
         _state.update { it.copy(localModelReachable = false) }
+    }
+
+    fun setEndpointDraft(value: String) = _state.update { it.copy(endpointDraft = value) }
+
+    /** Point the app at any OpenAI-compatible server: on this device, or a PC on the LAN. */
+    fun applyEndpoint() {
+        val value = _state.value.endpointDraft.trim()
+        if (value.isBlank()) return
+        launcher.setEndpoint(if (value.startsWith("http")) value else "http://$value")
+        viewModelScope.launch {
+            val status = launcher.start()
+            advisor.configureLocal(status.endpoint, "")
+            _state.update { it.copy(server = status, manualCommand = launcher.manualCommand()) }
+        }
     }
 
     fun probeServer() {

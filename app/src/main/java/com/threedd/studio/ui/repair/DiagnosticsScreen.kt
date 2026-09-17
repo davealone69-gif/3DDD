@@ -147,6 +147,17 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
                     style = MaterialTheme.typography.labelSmall, color = TextSecondary,
                     modifier = Modifier.padding(top = 6.dp))
             }
+            OutlinedTextField(
+                value = state.endpointDraft,
+                onValueChange = viewModel::setEndpointDraft,
+                label = { Text("Server address (default 127.0.0.1:8088, or your PC: 192.168.1.50:8088)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            OutlinedButton(onClick = viewModel::applyEndpoint, modifier = Modifier.padding(top = 4.dp)) {
+                Text("Use this address")
+            }
+
             OutlinedButton(
                 onClick = viewModel::exportModelForTermux,
                 modifier = Modifier.padding(top = 8.dp)
