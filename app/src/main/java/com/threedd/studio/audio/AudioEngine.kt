@@ -29,7 +29,13 @@ class AudioEngine @Inject constructor(@ApplicationContext private val context: C
     private val soundIds = mutableMapOf<Cue, Int>()
     private var loaded = false
     var sfxEnabled: Boolean = true
+
+    /** Single source of truth for output level: assigning it retunes the ambient bed too. */
     var volume: Float = 0.7f
+        set(value) {
+            field = value.coerceIn(0f, 1f)
+            ambient.setVolume(field)
+        }
 
     enum class Cue { TAP, SELECT, CONFIRM, ERROR, UNLOCK }
 
@@ -66,11 +72,6 @@ class AudioEngine @Inject constructor(@ApplicationContext private val context: C
     fun stopAmbient() = ambient.stop()
 
     val isAmbientRunning: Boolean get() = ambient.isRunning
-
-    fun setVolume(value: Float) {
-        volume = value.coerceIn(0f, 1f)
-        ambient.setVolume(volume)
-    }
 
     fun release() {
         ambient.stop()
