@@ -23,7 +23,7 @@ import com.threedd.studio.data.model.QualityPreset
  */
 class StudioRenderer(private val context: Context) {
 
-    val engine: Engine = Engine.create()
+    val engine: Engine = createEngine()
     val renderer: Renderer = engine.createRenderer()
     val scene: Scene = engine.createScene()
     val view: View = engine.createView()
@@ -43,6 +43,21 @@ class StudioRenderer(private val context: Context) {
     @Volatile private var viewportHeight = 1
     private var quality: QualityPreset = QualityPreset.BALANCED
     private var lightState = LightState()
+
+    /**
+     * Filament's DEFAULT backend selection can silently land on the no-op driver - notably on
+     * emulators without Vulkan - and a no-op engine then fails every texture upload and
+     * material creation with an opaque precondition error. Detect that and request GLES.
+     */
+    private fun createEngine(): Engine {
+        var created = Engine.create()
+        if (created.backend == Engine.Backend.NOOP) {
+            runCatching { created.destroy() }
+            created = runCatching { Engine.create(Engine.Backend.OPENGL) }.getOrElse { Engine.create() }
+        }
+        android.util.Log.i(TAG, "Filament backend = ${created.backend}")
+        return created
+    }
 
     val isReadyToRender: Boolean get() = uiHelper.isReadyToRender && swapChain != null
     val loadedModelName: String? get() = loadedName
@@ -176,6 +191,10 @@ class StudioRenderer(private val context: Context) {
     }
 
     fun destroyEncoderSwapChain(swapChain: SwapChain) = engine.destroySwapChain(swapChain)
+
+    companion object {
+        const val TAG = "3DoubleD-Renderer"
+    }
 
     fun destroy() {
         uiHelper.detach()

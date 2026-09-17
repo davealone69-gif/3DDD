@@ -63,6 +63,15 @@ class RuntimePipelineTest {
     }
 
     @Test
+    fun engineUsesARealGraphicsBackend() {
+        // A no-op driver makes every later assertion meaningless, so fail loudly here first.
+        assertTrue(
+            "Filament selected the no-op backend: ${renderer.engine.backend}",
+            renderer.engine.backend != com.google.android.filament.Engine.Backend.NOOP
+        )
+    }
+
+    @Test
     fun loadsEveryBuiltInRig() {
         ModelRepository.builtInModels.forEach { model ->
             assertTrue("failed to load ${model.displayName}", renderer.load(model))
