@@ -40,7 +40,7 @@ fun AboutScreen() {
                 "3Double D is a photorealistic avatar design studio built with Jetpack Compose and Google Filament. " +
                     "The renderer, the on-device material compiler (filamat), the glTF/GLB geometry reader, " +
                     "the shape-from-silhouette scanner, the audio synthesiser and the GIF/MP4 encoders " +
-                    "all run on device.",
+                    "including skeletal skinning, glTF animation and texture maps, all run on device.",
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier.padding(top = 12.dp)
             )

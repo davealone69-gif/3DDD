@@ -15,17 +15,18 @@ import com.threedd.studio.data.model.MaterialState
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.FloatBuffer
 import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
- * Turns parsed glTF geometry into Filament renderables.
+ * Builds Filament scene objects from a parsed glTF document.
  *
- * Every primitive becomes one entity with its own vertex/index buffers and its own instance
- * of the studio PBR material, so the Material Editor can drive glTF imports and the built-in
- * rigs through exactly the same code path. Morph targets are evaluated on the CPU and the
- * position buffer is re-uploaded, because Filament's MorphTargetBuffer JNI binding caps the
- * update count far below a real character mesh.
+ * One entity per glTF node carries the node's transform, so rigid node animation works; mesh
+ * primitives hang off those entities, or off the scene root when the mesh is skinned (the
+ * glTF spec says a skinned mesh node's own transform is ignored). Skins are driven through
+ * RenderableManager bone matrices, and morph targets are evaluated on the CPU and re-uploaded
+ * because Filament's MorphTargetBuffer JNI binding caps the update count below a real mesh.
  */
 class ModelLoader(
     private val context: Context,
@@ -36,101 +37,146 @@ class ModelLoader(
 
     private class Piece(
         val entity: Int,
+        val renderableInstance: Int,
         val vertexBuffer: VertexBuffer,
         val indexBuffer: IndexBuffer,
         val basePositions: FloatArray,
         val morphTargets: List<FloatArray>,
         val morphNames: List<String>,
         val materialInstance: MaterialInstance,
-        val gltfState: MaterialState
-    )
+        val gltfState: MaterialState,
+        val boneTransformInstances: IntArray?,
+        val inverseBind: FloatArray?,
+        val boneBuffer: FloatBuffer?
+    ) {
+        var uploadedWeights: FloatArray? = null
+    }
 
     private val em = engine.entityManager
-    private val pieces = mutableListOf<Piece>()
-    private var bounds = floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f)
+    private val tm = engine.transformManager
+    private val rm = engine.renderableManager
 
-    val triangleCount: Int get() = triangleCountInternal
-    private var triangleCountInternal = 0
+    private val pieces = ArrayList<Piece>()
+    private val nodeEntities = ArrayList<Int>()
+    private val nodeTransformInstances = ArrayList<Int>()
+    private val nodeChildren = ArrayList<IntArray>()
+    private val nodeBaseTrs = ArrayList<FloatArray>()
+    private var document: GltfDocument.Document? = null
+    private var bounds = floatArrayOf(-1f, -1f, -1f, 1f, 1f, 1f)
+    private var triangleTotal = 0
+
+    private val skins = ArrayList<GltfDocument.Skin?>()
+    private var animationList: List<GltfDocument.Animation> = emptyList()
+    private var activeAnimation = -1
+    private var currentWeights: Map<String, Float> = emptyMap()
+    private val scratch16 = FloatArray(16)
+    private val scratch16b = FloatArray(16)
 
     val boundingHeight: Float
         get() = (bounds[4] - bounds[1]).takeIf { it > 0.01f } ?: 1.8f
 
-    val boundingBoxCenterY: Float
-        get() = (bounds[1] + bounds[4]) / 2f
+    val boundingBoxCenterY: Float get() = (bounds[1] + bounds[4]) / 2f
+
+    val triangleCount: Int get() = triangleTotal
 
     val morphTargetNames: List<String>
         get() = pieces.firstOrNull()?.morphNames ?: emptyList()
 
-    /** No skeletal animation is applied: glTF nodes are baked into a single static mesh. */
-    fun animations(): List<AnimationClip> = emptyList()
+    fun animations(): List<AnimationClip> =
+        animationList.mapIndexed { index, a -> AnimationClip(index, a.name, a.duration) }
 
     fun load(model: AvatarModel): Boolean {
         unload()
         val bytes = readModel(model) ?: return false
-        val document = GltfDocument.parse(bytes) ?: return false
+        val parsed = GltfDocument.parse(bytes) ?: return false
+        document = parsed
+
+        buildNodeGraph(parsed)
 
         var created = 0
-        document.primitives.forEach { primitive ->
+        parsed.primitives.forEach { primitive ->
             if (primitive.vertexCount < 3 || primitive.indices.isEmpty()) return@forEach
-            val piece = buildPiece(primitive) ?: return@forEach
-            pieces.add(piece)
-            scene.addEntity(piece.entity)
-            created++
+            if (buildPiece(parsed, primitive) != null) created++
         }
         if (created == 0) {
             unload()
             return false
         }
-        bounds = document.bounds
+
+        bounds = parsed.bounds()
+        animationList = parsed.animations
+        applyAnimation(0, 0f)
         return true
     }
 
-    private fun buildPiece(primitive: GltfDocument.Primitive): Piece? {
+    // ---- scene graph ----
+
+    private fun buildNodeGraph(parsed: GltfDocument.Document) {
+        parsed.nodes.forEach { node ->
+            val entity = em.create()
+            nodeEntities.add(entity)
+            val parentInstance = if (node.parent >= 0) nodeTransformInstances.getOrNull(node.parent) ?: 0 else 0
+            val local = node.matrix ?: compose(node.translation, node.rotation, node.scale)
+            val instance = if (node.parent >= 0 && parentInstance != 0) {
+                tm.create(entity, parentInstance, local)
+            } else {
+                val root = tm.create(entity)
+                tm.setTransform(root, local)
+                root
+            }
+            nodeTransformInstances.add(instance)
+            nodeChildren.add(node.children)
+            nodeBaseTrs.add(
+                floatArrayOf(
+                    node.translation[0], node.translation[1], node.translation[2],
+                    node.rotation[0], node.rotation[1], node.rotation[2], node.rotation[3],
+                    node.scale[0], node.scale[1], node.scale[2],
+                    if (node.matrix != null) 1f else 0f
+                )
+            )
+        }
+    }
+
+    private fun buildPiece(parsed: GltfDocument.Document, primitive: GltfDocument.Primitive): Piece? {
         val vertexCount = primitive.vertexCount
-        // Filament has no NORMAL attribute: the tangent frame (tangent, bitangent, normal)
-        // is encoded as a quaternion in TANGENTS. We always supply it.
         val normals = primitive.normals ?: computeNormals(primitive.positions, primitive.indices)
-        val tangents = packTangents(normals)
+        val tangents = packTangents(normals, primitive.positions, primitive.uvs, primitive.indices, primitive.tangents)
+        val uvs = primitive.uvs ?: FloatArray(vertexCount * 2)
+
+        val boneIndices = primitive.boneIndices
+        val boneWeights = primitive.boneWeights
+        val skinned = boneIndices != null && boneWeights != null
+
+        var bufferCount = 3 // position, tangents, uv0
+        var colorIndex = -1
+        if (primitive.colors != null) { colorIndex = bufferCount; bufferCount++ }
+        var jointIndex = -1
+        var weightIndex = -1
+        if (skinned) { jointIndex = bufferCount; bufferCount++; weightIndex = bufferCount; bufferCount++ }
 
         val builder = VertexBuffer.Builder()
             .vertexCount(vertexCount)
-            .bufferCount(2 + (if (primitive.uvs != null) 1 else 0) + (if (primitive.colors != null) 1 else 0))
-            .attribute(
-                VertexBuffer.VertexAttribute.POSITION, 0,
-                VertexBuffer.AttributeType.FLOAT3, 0, 0
-            )
-            .attribute(
-                VertexBuffer.VertexAttribute.TANGENTS, 1,
-                VertexBuffer.AttributeType.FLOAT4, 0, 0
-            )
+            .bufferCount(bufferCount)
+            .attribute(VertexBuffer.VertexAttribute.POSITION, 0, VertexBuffer.AttributeType.FLOAT3, 0, 0)
+            .attribute(VertexBuffer.VertexAttribute.TANGENTS, 1, VertexBuffer.AttributeType.FLOAT4, 0, 0)
+            .attribute(VertexBuffer.VertexAttribute.UV0, 2, VertexBuffer.AttributeType.FLOAT2, 0, 0)
 
-        var index = 2
-        var uvIndex = -1
-        var colorIndex = -1
-        if (primitive.uvs != null) {
-            uvIndex = index
-            builder.attribute(
-                VertexBuffer.VertexAttribute.UV0, index,
-                VertexBuffer.AttributeType.FLOAT2, 0, 0
-            )
-            index++
+        if (colorIndex >= 0) {
+            builder.attribute(VertexBuffer.VertexAttribute.COLOR, colorIndex, VertexBuffer.AttributeType.FLOAT4, 0, 0)
         }
-        if (primitive.colors != null) {
-            colorIndex = index
-            builder.attribute(
-                VertexBuffer.VertexAttribute.COLOR, index,
-                VertexBuffer.AttributeType.FLOAT4, 0, 0
-            )
+        if (jointIndex >= 0) {
+            builder.attribute(VertexBuffer.VertexAttribute.BONE_INDICES, jointIndex, VertexBuffer.AttributeType.UBYTE4, 0, 0)
+            builder.attribute(VertexBuffer.VertexAttribute.BONE_WEIGHTS, weightIndex, VertexBuffer.AttributeType.FLOAT4, 0, 0)
         }
 
         val vertexBuffer = builder.build(engine)
         vertexBuffer.setBufferAt(engine, 0, floats(primitive.positions))
         vertexBuffer.setBufferAt(engine, 1, floats(tangents))
-        if (uvIndex >= 0) {
-            vertexBuffer.setBufferAt(engine, uvIndex, floats(primitive.uvs!!))
-        }
-        if (colorIndex >= 0) {
-            vertexBuffer.setBufferAt(engine, colorIndex, floats(primitive.colors!!))
+        vertexBuffer.setBufferAt(engine, 2, floats(uvs))
+        if (colorIndex >= 0) vertexBuffer.setBufferAt(engine, colorIndex, floats(primitive.colors!!))
+        if (jointIndex >= 0) {
+            vertexBuffer.setBufferAt(engine, jointIndex, bytesOf(boneIndices!!))
+            vertexBuffer.setBufferAt(engine, weightIndex, floats(boneWeights!!))
         }
 
         val indexBuffer = IndexBuffer.Builder()
@@ -139,87 +185,361 @@ class ModelLoader(
             .build(engine)
         indexBuffer.setBuffer(engine, ints(primitive.indices))
 
+        val material = parsed.materials.getOrNull(primitive.materialIndex)
+            ?: GltfDocument.Material()
         val gltfState = MaterialState(
-            baseColorHex = primitive.material.baseColorFactor.toHex(),
-            metallic = primitive.material.metallicFactor,
-            roughness = primitive.material.roughnessFactor,
+            baseColorHex = material.baseColorFactor.toHex(),
+            metallic = material.metallicFactor,
+            roughness = material.roughnessFactor,
             reflectance = 0.5f,
-            emissiveHex = "#000000",
-            emissiveIntensity = 0f
+            emissiveHex = material.emissiveFactor.toHex(),
+            emissiveIntensity = if (material.emissiveFactor.any { it > 0f }) 1f else 0f,
+            normalScale = material.normalScale,
+            occlusionStrength = material.occlusionStrength
         )
-        val materialInstance = materialFactory.createInstance(gltfState)
+        val textures = materialFactory.texturesFor(parsed, material)
+        val materialInstance = materialFactory.createInstance(gltfState, textures, material.alphaMode)
 
-        val centerX = (boundsOf(primitive.positions, 0, 3))
-        val halfExtent = primitive.positions.halfExtents()
+        val half = primitive.positions.halfExtents()
+        val centre = primitive.positions.centre()
         val entity = em.create()
-        RenderableManager.Builder(1)
-            .boundingBox(Box(centerX[0], centerX[1], centerX[2], halfExtent[0], halfExtent[1], halfExtent[2]))
+
+        val skin = parsed.skins.getOrNull(
+            if (primitive.nodeIndex in parsed.nodes.indices) parsed.nodes[primitive.nodeIndex].skinIndex else -1
+        )
+
+        val renderableBuilder = RenderableManager.Builder(1)
+            .boundingBox(Box(centre[0], centre[1], centre[2], half[0], half[1], half[2]))
             .geometry(
                 0, RenderableManager.PrimitiveType.TRIANGLES, vertexBuffer, indexBuffer,
                 0, 0, vertexCount - 1, primitive.indices.size
             )
             .material(0, materialInstance)
-            .culling(!primitive.material.doubleSided)
+            .culling(!material.doubleSided)
             .castShadows(true)
             .receiveShadows(true)
-            .build(engine, entity)
 
-        triangleCountInternal += primitive.triangleCount
+        var boneTransformInstances: IntArray? = null
+        var inverseBind: FloatArray? = null
+        var boneBuffer: FloatBuffer? = null
+
+        if (skinned && skin != null && skin.joints.isNotEmpty()) {
+            val boneCount = minOf(skin.joints.size, MAX_BONES)
+            renderableBuilder.skinning(boneCount)
+            boneTransformInstances = IntArray(boneCount) { j ->
+                nodeTransformInstances.getOrElse(skin.joints[j]) { 0 }
+            }
+            inverseBind = skin.inverseBind
+            boneBuffer = ByteBuffer.allocateDirect(boneCount * 16 * 4)
+                .order(ByteOrder.nativeOrder()).asFloatBuffer()
+        }
+
+        renderableBuilder.build(engine, entity)
+        val renderableInstance = rm.getInstance(entity)
+
+        // A skinned mesh is placed at the scene root: the glTF spec ignores the node transform
+        // because the skin matrices already produce world-space positions.
+        val attachToNode = !(skinned && skin != null)
+        if (attachToNode) {
+            val parentInstance = nodeTransformInstances.getOrElse(primitive.nodeIndex) { 0 }
+            val childTransform = tm.create(entity)
+            if (parentInstance != 0) tm.setParent(childTransform, parentInstance)
+        } else {
+            tm.create(entity)
+        }
+
+        scene.addEntity(entity)
+        triangleTotal += primitive.triangleCount
+
         return Piece(
             entity = entity,
+            renderableInstance = renderableInstance,
             vertexBuffer = vertexBuffer,
             indexBuffer = indexBuffer,
             basePositions = primitive.positions,
             morphTargets = primitive.morphTargets,
             morphNames = primitive.morphTargetNames,
             materialInstance = materialInstance,
-            gltfState = gltfState
-        )
+            gltfState = gltfState,
+            boneTransformInstances = boneTransformInstances,
+            inverseBind = inverseBind,
+            boneBuffer = boneBuffer
+        ).also { pieces.add(it) }
     }
 
-    /** Re-applies the studio material to every primitive, replacing the glTF factors. */
+    // ---- material overrides ----
+
     fun overrideMaterials(state: MaterialState) {
         pieces.forEach { materialFactory.apply(it.materialInstance, state) }
     }
 
-    /** Restores each primitive to the factors its glTF material declared. */
     fun clearMaterialOverride() {
         pieces.forEach { materialFactory.apply(it.materialInstance, it.gltfState) }
     }
 
+    // ---- morph targets ----
+
     fun setMorphWeights(weights: Map<String, Float>) {
+        currentWeights = weights
         pieces.forEach { piece ->
             if (piece.morphTargets.isEmpty() || piece.morphNames.isEmpty()) return@forEach
-            var touched = false
+            val values = FloatArray(piece.morphNames.size) { i -> weights[piece.morphNames[i]] ?: 0f }
+            val previous = piece.uploadedWeights
+            if (previous != null && previous.contentEquals(values)) return@forEach
+            piece.uploadedWeights = values
             val out = piece.basePositions.copyOf()
             piece.morphTargets.forEachIndexed { targetIndex, delta ->
-                val name = piece.morphNames.getOrNull(targetIndex) ?: return@forEachIndexed
-                val weight = weights[name] ?: return@forEachIndexed
+                val weight = values.getOrElse(targetIndex) { 0f }
                 if (weight == 0f) return@forEachIndexed
                 val limit = minOf(out.size, delta.size)
                 for (i in 0 until limit) out[i] += delta[i] * weight
-                touched = true
             }
-            if (touched) piece.vertexBuffer.setBufferAt(engine, 0, floats(out))
+            piece.vertexBuffer.setBufferAt(engine, 0, floats(out))
         }
+    }
+
+    // ---- animation ----
+
+    /**
+     * Evaluates [time] seconds of clip [index]: node TRS channels are written straight to the
+     * TransformManager, weight channels drive the morph targets, and any skinned primitive then
+     * gets fresh bone matrices.
+     */
+    fun applyAnimation(index: Int, time: Float) {
+        val animation = animationList.getOrNull(index) ?: run {
+            uploadBones()
+            return
+        }
+        activeAnimation = index
+
+        val animatedNodes = HashSet<Int>()
+        var animatedWeights: MutableMap<String, Float>? = null
+
+        animation.channels.forEach { channel ->
+            val value = evaluate(channel, time) ?: return@forEach
+            animatedNodes.add(channel.nodeIndex)
+            when (channel.path) {
+                GltfDocument.PATH_TRANSLATION -> nodeBaseTrs.getOrNull(channel.nodeIndex)?.let {
+                    it[0] = value[0]; it[1] = value[1]; it[2] = value[2]
+                }
+                GltfDocument.PATH_ROTATION -> nodeBaseTrs.getOrNull(channel.nodeIndex)?.let {
+                    it[3] = value[0]; it[4] = value[1]; it[5] = value[2]; it[6] = value[3]
+                }
+                GltfDocument.PATH_SCALE -> nodeBaseTrs.getOrNull(channel.nodeIndex)?.let {
+                    it[7] = value[0]; it[8] = value[1]; it[9] = value[2]
+                }
+                GltfDocument.PATH_WEIGHTS -> {
+                    val names = pieces.firstOrNull()?.morphNames ?: emptyList()
+                    val map = animatedWeights ?: LinkedHashMap<String, Float>().also { animatedWeights = it }
+                    names.forEachIndexed { i, name ->
+                        if (i < value.size) map[name] = value[i]
+                    }
+                }
+            }
+        }
+
+        animatedNodes.forEach { nodeIndex ->
+            val instance = nodeTransformInstances.getOrNull(nodeIndex) ?: return@forEach
+            val trs = nodeBaseTrs.getOrNull(nodeIndex) ?: return@forEach
+            val matrix = if (trs.getOrElse(10) { 0f } == 1f) {
+                // Node declared an explicit matrix and has no TRS to recompose.
+                compose(
+                    floatArrayOf(trs[0], trs[1], trs[2]),
+                    floatArrayOf(trs[3], trs[4], trs[5], trs[6]),
+                    floatArrayOf(trs[7], trs[8], trs[9])
+                )
+            } else {
+                compose(
+                    floatArrayOf(trs[0], trs[1], trs[2]),
+                    floatArrayOf(trs[3], trs[4], trs[5], trs[6]),
+                    floatArrayOf(trs[7], trs[8], trs[9])
+                )
+            }
+            tm.setTransform(instance, matrix)
+        }
+
+        animatedWeights?.let { setMorphWeights(it) }
+        uploadBones()
+    }
+
+    private fun uploadBones() {
+        pieces.forEach { piece ->
+            val transformInstances = piece.boneTransformInstances ?: return@forEach
+            val inverseBind = piece.inverseBind ?: return@forEach
+            val buffer = piece.boneBuffer ?: return@forEach
+            buffer.clear()
+            transformInstances.forEachIndexed { j, instance ->
+                if (instance == 0) {
+                    repeat(16) { buffer.put(if (it % 5 == 0) 1f else 0f) }
+                    return@forEachIndexed
+                }
+                val world = tm.getWorldTransform(instance, scratch16)
+                val inverse = inverseBind
+                val offset = j * 16
+                if (offset + 16 <= inverse.size) {
+                    multiply(world, inverse, offset, scratch16b)
+                    buffer.put(scratch16b)
+                } else {
+                    repeat(16) { buffer.put(if (it % 5 == 0) 1f else 0f) }
+                }
+            }
+            buffer.flip()
+            rm.setBonesAsMatrices(piece.renderableInstance, buffer, transformInstances.size, 0)
+        }
+    }
+
+    /** Samples a channel, honouring STEP, LINEAR and CUBICSPLINE interpolation. */
+    private fun evaluate(channel: GltfDocument.Channel, time: Float): FloatArray? {
+        val times = channel.times
+        val values = channel.values
+        val components = channel.componentCount
+        if (times.isEmpty() || components <= 0) return null
+        if (values.size < components) return null
+
+        val stride = if (channel.interpolation == GltfDocument.INTERP_CUBICSPLINE) components * 3 else components
+        val keyCount = minOf(times.size, values.size / stride)
+        if (keyCount <= 0) return null
+
+        if (times.size == 1 || time <= times[0]) return key(values, 0, stride, components, channel.interpolation)
+        if (time >= times[keyCount - 1]) {
+            return key(values, keyCount - 1, stride, components, channel.interpolation)
+        }
+
+        var low = 0
+        var high = keyCount - 1
+        while (low + 1 < high) {
+            val mid = (low + high) / 2
+            if (times[mid] <= time) low = mid else high = mid
+        }
+        val t0 = times[low]
+        val t1 = times[high]
+        val span = (t1 - t0).takeIf { it > 1e-6f } ?: return key(values, low, stride, components, channel.interpolation)
+        val u = ((time - t0) / span).coerceIn(0f, 1f)
+
+        if (channel.interpolation == GltfDocument.INTERP_STEP) {
+            return key(values, low, stride, components, channel.interpolation)
+        }
+
+        if (channel.interpolation == GltfDocument.INTERP_CUBICSPLINE) {
+            val out = FloatArray(components)
+            val v0 = low * stride + components
+            val v1 = high * stride + components
+            for (c in 0 until components) {
+                val p0 = values.getOrElse(v0 + c) { 0f }
+                val m0 = values.getOrElse(low * stride + c) { 0f } * span
+                val p1 = values.getOrElse(v1 + c) { 0f }
+                val m1 = values.getOrElse(high * stride + 2 * components + c) { 0f } * span
+                val u2 = u * u
+                val u3 = u2 * u
+                out[c] = (2 * u3 - 3 * u2 + 1) * p0 + (u3 - 2 * u2 + u) * m0 +
+                    (-2 * u3 + 3 * u2) * p1 + (u3 - u2) * m1
+            }
+            return out
+        }
+
+        val a = key(values, low, stride, components, channel.interpolation) ?: return null
+        val b = key(values, high, stride, components, channel.interpolation) ?: return null
+        return if (channel.path == GltfDocument.PATH_ROTATION) {
+            slerp(a, b, u, components)
+        } else {
+            FloatArray(components) { c -> a[c] + (b[c] - a[c]) * u }
+        }
+    }
+
+    private fun key(values: FloatArray, index: Int, stride: Int, components: Int, interpolation: Int): FloatArray? {
+        val base = if (interpolation == GltfDocument.INTERP_CUBICSPLINE) {
+            index * stride + components
+        } else {
+            index * stride
+        }
+        if (base + components > values.size) return null
+        return FloatArray(components) { values[base + it] }
+    }
+
+    private fun slerp(a: FloatArray, b: FloatArray, u: Float, components: Int): FloatArray {
+        if (components != 4) return FloatArray(components) { a[it] + (b[it] - a[it]) * u }
+        var dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+        var bx = b[0]; var by = b[1]; var bz = b[2]; var bw = b[3]
+        if (dot < 0f) {
+            dot = -dot; bx = -bx; by = -by; bz = -bz; bw = -bw
+        }
+        if (dot > 0.9995f) {
+            val out = FloatArray(4) { a[it] + (floatArrayOf(bx, by, bz, bw)[it] - a[it]) * u }
+            return normalizeQuat(out)
+        }
+        val theta = kotlin.math.acos(dot.coerceIn(-1f, 1f))
+        val sinTheta = kotlin.math.sin(theta)
+        val wa = kotlin.math.sin((1f - u) * theta) / sinTheta
+        val wb = kotlin.math.sin(u * theta) / sinTheta
+        return normalizeQuat(FloatArray(4) { wa * a[it] + wb * floatArrayOf(bx, by, bz, bw)[it] })
+    }
+
+    private fun normalizeQuat(q: FloatArray): FloatArray {
+        val len = sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3])
+        if (len < 1e-6f) return floatArrayOf(0f, 0f, 0f, 1f)
+        return FloatArray(4) { q[it] / len }
     }
 
     fun unload() {
         pieces.forEach { piece ->
             scene.removeEntity(piece.entity)
+            runCatching { rm.destroy(piece.entity) }
+            runCatching { tm.destroy(piece.entity) }
             em.destroy(piece.entity)
             engine.destroyVertexBuffer(piece.vertexBuffer)
             engine.destroyIndexBuffer(piece.indexBuffer)
             engine.destroyMaterialInstance(piece.materialInstance)
         }
         pieces.clear()
-        triangleCountInternal = 0
-        bounds = floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f)
+        nodeEntities.forEach { entity ->
+            runCatching { tm.destroy(entity) }
+            em.destroy(entity)
+        }
+        nodeEntities.clear()
+        nodeTransformInstances.clear()
+        nodeChildren.clear()
+        nodeBaseTrs.clear()
+        skins.clear()
+        animationList = emptyList()
+        activeAnimation = -1
+        triangleTotal = 0
+        document = null
+        bounds = floatArrayOf(-1f, -1f, -1f, 1f, 1f, 1f)
     }
 
     fun destroy() = unload()
 
-    // ---- helpers ----
+    // ---- maths helpers (column-major, matching glTF and Filament) ----
+
+    private fun compose(t: FloatArray, r: FloatArray, s: FloatArray): FloatArray {
+        val x = r[0]; val y = r[1]; val z = r[2]; val w = r[3]
+        val xx = x * x; val yy = y * y; val zz = z * z
+        val xy = x * y; val xz = x * z; val yz = y * z
+        val wx = w * x; val wy = w * y; val wz = w * z
+        val m = FloatArray(16)
+        m[0] = (1 - 2 * (yy + zz)) * s[0]
+        m[1] = (2 * (xy + wz)) * s[0]
+        m[2] = (2 * (xz - wy)) * s[0]
+        m[4] = (2 * (xy - wz)) * s[1]
+        m[5] = (1 - 2 * (xx + zz)) * s[1]
+        m[6] = (2 * (yz + wx)) * s[1]
+        m[8] = (2 * (xz + wy)) * s[2]
+        m[9] = (2 * (yz - wx)) * s[2]
+        m[10] = (1 - 2 * (xx + yy)) * s[2]
+        m[12] = t[0]; m[13] = t[1]; m[14] = t[2]; m[15] = 1f
+        return m
+    }
+
+    /** result = a * b, where b starts at inverseBind[offset]. */
+    private fun multiply(a: FloatArray, b: FloatArray, offset: Int, out: FloatArray) {
+        for (c in 0 until 4) {
+            for (row in 0 until 4) {
+                var sum = 0f
+                for (k in 0 until 4) sum += a[k * 4 + row] * b[offset + c * 4 + k]
+                out[c * 4 + row] = sum
+            }
+        }
+    }
 
     /** Area-weighted vertex normals, used when an asset does not carry NORMAL. */
     private fun computeNormals(positions: FloatArray, indices: IntArray): FloatArray {
@@ -251,35 +571,66 @@ class ModelLoader(
     /**
      * Encodes vertex normals as the quaternion Filament decodes in common_math.glsl:
      *   n = (0,0,1) + (2,-2,-2)qx(qz,qw,qx) + (2,2,-2)qy(qw,qz,qy)
-     * which is the third column of the rotation matrix built from the quaternion. We build an
-     * arbitrary orthonormal basis (T, B, N) and convert that matrix to a quaternion, so the
-     * decoded normal is exactly N. The tangent/bitangent directions are irrelevant here
-     * because the studio material uses neither anisotropy nor normal maps.
+     * which is the third column of the rotation matrix built from the quaternion. When the
+     * asset supplies UVs we derive a real mikktspace-style tangent so normal maps are oriented
+     * correctly; otherwise an arbitrary orthonormal basis is used, which is fine because only
+     * the normal affects shading unless a normal map is bound.
      */
-    private fun packTangents(normals: FloatArray): FloatArray {
+    private fun packTangents(
+        normals: FloatArray,
+        positions: FloatArray,
+        uvs: FloatArray?,
+        indices: IntArray,
+        gltfTangents: FloatArray?
+    ): FloatArray {
         val count = normals.size / 3
         val out = FloatArray(count * 4)
+        val derived = if (uvs != null && uvs.size >= count * 2) deriveTangents(positions, normals, uvs, indices) else null
+
         for (i in 0 until count) {
             var nx = normals[i * 3]
             var ny = normals[i * 3 + 1]
             var nz = normals[i * 3 + 2]
-            val length = sqrt(nx * nx + ny * ny + nz * nz)
-            if (length < 1e-6f) {
-                nx = 0f; ny = 0f; nz = 1f
-            } else {
-                nx /= length; ny /= length; nz /= length
+            val nlen = sqrt(nx * nx + ny * ny + nz * nz)
+            if (nlen < 1e-6f) { nx = 0f; ny = 0f; nz = 1f } else { nx /= nlen; ny /= nlen; nz /= nlen }
+
+            var tx: Float
+            var ty: Float
+            var tz: Float
+            var handedness = 1f
+            when {
+                gltfTangents != null && gltfTangents.size >= count * 4 -> {
+                    tx = gltfTangents[i * 4]; ty = gltfTangents[i * 4 + 1]; tz = gltfTangents[i * 4 + 2]
+                    handedness = if (gltfTangents[i * 4 + 3] < 0f) -1f else 1f
+                    val len = sqrt(tx * tx + ty * ty + tz * tz)
+                    if (len < 1e-6f) { tx = 1f; ty = 0f; tz = 0f } else { tx /= len; ty /= len; tz /= len }
+                }
+                derived != null -> {
+                    tx = derived[i * 3]; ty = derived[i * 3 + 1]; tz = derived[i * 3 + 2]
+                    val len = sqrt(tx * tx + ty * ty + tz * tz)
+                    if (len < 1e-6f) { tx = 1f; ty = 0f; tz = 0f } else { tx /= len; ty /= len; tz /= len }
+                }
+                else -> {
+                    val useX = abs(nx) < 0.9f
+                    val rx = if (useX) 1f else 0f
+                    val ry = if (useX) 0f else 1f
+                    tx = ry * nz; ty = -rx * nz; tz = rx * ny - ry * nx
+                    val len = sqrt(tx * tx + ty * ty + tz * tz)
+                    if (len < 1e-6f) { tx = 1f; ty = 0f; tz = 0f } else { tx /= len; ty /= len; tz /= len }
+                }
             }
 
-            val useX = abs(nx) < 0.9f
-            val rx = if (useX) 1f else 0f
-            val ry = if (useX) 0f else 1f
-
-            var tx = ry * nz
-            var ty = -rx * nz
-            var tz = rx * ny - ry * nx
+            // Gram-Schmidt: make the tangent perpendicular to the normal.
+            val d = tx * nx + ty * ny + tz * nz
+            tx -= nx * d; ty -= ny * d; tz -= nz * d
             val tl = sqrt(tx * tx + ty * ty + tz * tz)
             if (tl < 1e-6f) {
-                tx = 1f; ty = 0f; tz = 0f
+                val useX = abs(nx) < 0.9f
+                val rx = if (useX) 1f else 0f
+                val ry = if (useX) 0f else 1f
+                tx = ry * nz; ty = -rx * nz; tz = rx * ny - ry * nx
+                val l2 = sqrt(tx * tx + ty * ty + tz * tz)
+                if (l2 < 1e-6f) { tx = 1f; ty = 0f; tz = 0f } else { tx /= l2; ty /= l2; tz /= l2 }
             } else {
                 tx /= tl; ty /= tl; tz /= tl
             }
@@ -289,7 +640,7 @@ class ModelLoader(
             val bz = nx * ty - ny * tx
 
             val m00 = tx; val m10 = ty; val m20 = tz
-            val m01 = bx; val m11 = by; val m21 = bz
+            val m01 = bx * handedness; val m11 = by * handedness; val m21 = bz * handedness
             val m02 = nx; val m12 = ny; val m22 = nz
 
             val trace = m00 + m11 + m22
@@ -333,22 +684,40 @@ class ModelLoader(
         return out
     }
 
-
-    private fun boundsOf(values: FloatArray, componentOffset: Int, stride: Int): FloatArray {
-        if (values.isEmpty()) return floatArrayOf(0f, 0f, 0f)
-        var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE; var minZ = Float.MAX_VALUE
-        var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE; var maxZ = -Float.MAX_VALUE
-        var i = componentOffset
-        while (i + 2 < values.size) {
-            if (values[i] < minX) minX = values[i]
-            if (values[i + 1] < minY) minY = values[i + 1]
-            if (values[i + 2] < minZ) minZ = values[i + 2]
-            if (values[i] > maxX) maxX = values[i]
-            if (values[i + 1] > maxY) maxY = values[i + 1]
-            if (values[i + 2] > maxZ) maxZ = values[i + 2]
-            i += stride
+    /** Kenney/mikktspace style per-vertex tangents accumulated from UV derivatives. */
+    private fun deriveTangents(
+        positions: FloatArray, normals: FloatArray, uvs: FloatArray, indices: IntArray
+    ): FloatArray {
+        val count = positions.size / 3
+        val tan = FloatArray(count * 3)
+        var i = 0
+        while (i + 2 < indices.size) {
+            val i0 = indices[i]; val i1 = indices[i + 1]; val i2 = indices[i + 2]
+            if (i0 < count && i1 < count && i2 < count) {
+                val x0 = positions[i0 * 3]; val y0 = positions[i0 * 3 + 1]; val z0 = positions[i0 * 3 + 2]
+                val x1 = positions[i1 * 3]; val y1 = positions[i1 * 3 + 1]; val z1 = positions[i1 * 3 + 2]
+                val x2 = positions[i2 * 3]; val y2 = positions[i2 * 3 + 1]; val z2 = positions[i2 * 3 + 2]
+                val u0 = uvs[i0 * 2]; val v0 = uvs[i0 * 2 + 1]
+                val u1 = uvs[i1 * 2]; val v1 = uvs[i1 * 2 + 1]
+                val u2 = uvs[i2 * 2]; val v2 = uvs[i2 * 2 + 1]
+                val e1x = x1 - x0; val e1y = y1 - y0; val e1z = z1 - z0
+                val e2x = x2 - x0; val e2y = y2 - y0; val e2z = z2 - z0
+                val du1 = u1 - u0; val dv1 = v1 - v0
+                val du2 = u2 - u0; val dv2 = v2 - v0
+                val det = du1 * dv2 - du2 * dv1
+                if (abs(det) > 1e-9f) {
+                    val r = 1f / det
+                    val tx = (e1x * dv2 - e2x * dv1) * r
+                    val ty = (e1y * dv2 - e2y * dv1) * r
+                    val tz = (e1z * dv2 - e2z * dv1) * r
+                    tan[i0 * 3] += tx; tan[i0 * 3 + 1] += ty; tan[i0 * 3 + 2] += tz
+                    tan[i1 * 3] += tx; tan[i1 * 3 + 1] += ty; tan[i1 * 3 + 2] += tz
+                    tan[i2 * 3] += tx; tan[i2 * 3 + 1] += ty; tan[i2 * 3 + 2] += tz
+                }
+            }
+            i += 3
         }
-        return floatArrayOf((minX + maxX) / 2f, (minY + maxY) / 2f, (minZ + maxZ) / 2f)
+        return tan
     }
 
     private fun FloatArray.halfExtents(): FloatArray {
@@ -372,12 +741,31 @@ class ModelLoader(
         )
     }
 
+    private fun FloatArray.centre(): FloatArray {
+        if (isEmpty()) return floatArrayOf(0f, 0f, 0f)
+        var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE; var minZ = Float.MAX_VALUE
+        var maxX = -Float.MAX_VALUE; var maxY = -Float.MAX_VALUE; var maxZ = -Float.MAX_VALUE
+        var i = 0
+        while (i + 2 < size) {
+            if (this[i] < minX) minX = this[i]
+            if (this[i + 1] < minY) minY = this[i + 1]
+            if (this[i + 2] < minZ) minZ = this[i + 2]
+            if (this[i] > maxX) maxX = this[i]
+            if (this[i + 1] > maxY) maxY = this[i + 1]
+            if (this[i + 2] > maxZ) maxZ = this[i + 2]
+            i += 3
+        }
+        return floatArrayOf((minX + maxX) / 2f, (minY + maxY) / 2f, (minZ + maxZ) / 2f)
+    }
+
     private fun FloatArray.toHex(): String {
         fun channel(value: Float): Int = (value.coerceIn(0f, 1f) * 255f).toInt()
         val r = channel(getOrElse(0) { 1f })
         val g = channel(getOrElse(1) { 1f })
         val b = channel(getOrElse(2) { 1f })
-        return "#%02X%02X%02X".format(r, g, b)
+        val a = channel(getOrElse(3) { 1f })
+        return if (a >= 255) "#%02X%02X%02X".format(r, g, b)
+        else "#%02X%02X%02X%02X".format(r, g, b, a)
     }
 
     private fun floats(values: FloatArray): ByteBuffer {
@@ -394,11 +782,23 @@ class ModelLoader(
         return buffer
     }
 
+    private fun bytesOf(values: IntArray): ByteBuffer {
+        val buffer = ByteBuffer.allocateDirect(values.size).order(ByteOrder.nativeOrder())
+        values.forEach { buffer.put((it and 0xFF).toByte()) }
+        buffer.flip()
+        return buffer
+    }
+
     private fun readModel(model: AvatarModel): ByteArray? = if (model.isAsset) {
         val path = model.location.removePrefix("models/")
         runCatching { context.assets.open("models/$path").use { it.readBytes() } }.getOrNull()
     } else {
         val file = model.toUri().path?.let { File(it) }
         if (file == null || !file.exists()) null else runCatching { file.readBytes() }.getOrNull()
+    }
+
+    companion object {
+        /** Filament's setBonesAsMatrices accepts at most 255 bones. */
+        const val MAX_BONES = 255
     }
 }

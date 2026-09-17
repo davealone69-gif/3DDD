@@ -49,7 +49,9 @@ data class MaterialState(
     val emissiveHex: String = "#000000",
     val emissiveIntensity: Float = 0.0f,
     val clearCoat: Float = 0.0f,
-    val clearCoatRoughness: Float = 0.15f
+    val clearCoatRoughness: Float = 0.15f,
+    val normalScale: Float = 1.0f,
+    val occlusionStrength: Float = 1.0f
 )
 
 data class LightState(

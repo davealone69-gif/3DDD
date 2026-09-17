@@ -114,6 +114,12 @@ fun MaterialScreen(viewModel: StudioViewModel = sessionViewModel<StudioViewModel
             LabeledSlider("Clear coat roughness", material.clearCoatRoughness, 0.02f..1f, onValueChange = {
                 viewModel.updateMaterial(material.copy(clearCoatRoughness = it))
             })
+            LabeledSlider("Normal map strength", material.normalScale, 0f..3f, onValueChange = {
+                viewModel.updateMaterial(material.copy(normalScale = it))
+            })
+            LabeledSlider("Occlusion strength", material.occlusionStrength, 0f..1f, onValueChange = {
+                viewModel.updateMaterial(material.copy(occlusionStrength = it))
+            })
             Text(
                 "",
                 modifier = Modifier.padding(bottom = 24.dp)

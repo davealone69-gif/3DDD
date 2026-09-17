@@ -205,12 +205,14 @@ class StudioViewModel @Inject constructor(
             }
         }
         animationTime = next
+        renderer.models.applyAnimation(s.animationIndex, next)
     }
 
     private var animationTime = 0f
 
     fun restartAnimation() {
         animationTime = 0f
+        renderer.models.applyAnimation(_state.value.animationIndex, 0f)
     }
 
     override fun onCleared() {

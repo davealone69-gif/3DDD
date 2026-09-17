@@ -57,13 +57,24 @@ Scans, imported models, recordings and exports never leave the device.
 
 Filament and filamat are Apache-2.0. The generated base rigs are original work shipped under CC0.
 
-## Scope of the glTF reader
+## glTF support
 
-The bundled reader covers what the studio needs: static triangle geometry, per-primitive
-material factors, vertex colours, morph targets and baked node transforms. It deliberately
-does **not** implement skeletal skinning, glTF animation clips or texture-map sampling -
-imported models therefore arrive as static meshes shaded by the studio PBR material. The
-built-in rigs and every studio feature work through the same path.
+The bundled reader and runtime cover the glTF 2.0 features a character studio needs:
+
+- geometry: positions, normals, tangents, UV0, vertex colours, indices, any component type
+  or stride, integer accessors normalised on read
+- the node hierarchy, kept live in Filament's TransformManager
+- **skeletal skinning**: JOINTS_0 / WEIGHTS_0 plus inverse bind matrices, driven through
+  RenderableManager bone matrices (up to Filament's 255-bone limit)
+- **animation clips**: translation, rotation, scale and morph-weight channels with STEP,
+  LINEAR (quaternion slerp for rotations) and CUBICSPLINE interpolation
+- **textures**: base colour, metallic-roughness, normal, occlusion and emissive maps, with
+  glTF sampler wrap and filter state, decoded from bufferView or data-URI images
+- material factors, double-sided flag and OPAQUE / MASK / BLEND alpha modes
+- morph targets, evaluated on the CPU
+
+Known limits: textures are sampled with TEXCOORD_0 only (no `KHR_texture_transform` or a
+second UV set), and sparse accessor storage is not decoded.
 
 ## Continuous build
 
