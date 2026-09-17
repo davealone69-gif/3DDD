@@ -27,7 +27,7 @@ fun FilamentViewport(
 ) {
     val currentOnFrame = rememberUpdatedState(onFrame)
     val view = remember(renderer) {
-        FilamentSurfaceView(renderer.applicationContext, renderer)
+        FilamentSurfaceView(renderer.context, renderer)
     }
 
     DisposableEffect(renderer) {

@@ -210,7 +210,7 @@ fun StudioScreen(
                     // viewport status / controls
                     Column(
                         Modifier.align(Alignment.TopEnd).padding(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         ViewportBadge("FIT", Icons.Filled.CenterFocusStrong) { viewModel.resetCamera() }
                         ViewportBadge("RND", Icons.Filled.Casino) { viewModel.randomize() }
