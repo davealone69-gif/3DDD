@@ -204,7 +204,11 @@ class LocalModelLauncher @Inject constructor(@ApplicationContext private val con
         val model = sharedPath
             ?: _status.value.modelPath?.takeIf { it.startsWith("/sdcard") || it.startsWith("/storage") }
             ?: "/sdcard/Download/3DoubleD/your-model.gguf"
-        return "llama-server -m $model --host 127.0.0.1 --port ${portOf(_status.value.endpoint)}"
+        val port = portOf(_status.value.endpoint)
+        // -ngl 0: no GPU layers, phones have no usable backend.
+        // -ngld -1: leave the speculative draft model unset; a fresh llama.cpp build asserts
+        //   "n_gpu_layers_draft < 0" during argument parsing if this is left at its default.
+        return "llama-server -m $model --host 127.0.0.1 --port $port -c 2048 -ngl 0 -ngld -1"
     }
 
     private fun findBinary(): File? {
