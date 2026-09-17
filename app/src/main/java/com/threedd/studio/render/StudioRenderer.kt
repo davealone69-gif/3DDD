@@ -21,7 +21,7 @@ import com.threedd.studio.data.model.QualityPreset
  * The rendering core: one Engine, Renderer, Scene, View and Camera for the studio.
  * Owned by the viewport composable for the lifetime of the screen.
  */
-class StudioRenderer(private val context: Context) {
+class StudioRenderer(val context: Context) {
 
     val engine: Engine = createEngine()
     val renderer: Renderer = engine.createRenderer()
@@ -91,6 +91,8 @@ class StudioRenderer(private val context: Context) {
                 viewportWidth = width.coerceAtLeast(1)
                 viewportHeight = height.coerceAtLeast(1)
                 view.viewport = Viewport(0, 0, viewportWidth, viewportHeight)
+                // keep the subject filling the view when the viewport changes shape
+                fitCamera()
             }
         })
     }
@@ -115,15 +117,54 @@ class StudioRenderer(private val context: Context) {
         environment.apply(state)
     }
 
+    /** Set when the last load failed, so the UI can explain an empty viewport. */
+    var lastError: String? = null
+        private set
+
+    /**
+     * Loads a model and frames it to fill the viewport. Never throws: a driver or asset
+     * failure is reported through [lastError] rather than taking the screen down.
+     */
     fun load(model: AvatarModel): Boolean {
-        val ok = models.load(model)
-        if (ok) {
-            loadedName = model.displayName
-            environment.install(lightState)
-            val box = models.boundingBoxCenterY to models.boundingHeight
-            orbit.frame(box.first, box.second)
+        lastError = null
+        val ok = try {
+            models.load(model)
+        } catch (t: Throwable) {
+            android.util.Log.e(TAG, "failed to load ${model.displayName}", t)
+            lastError = t.message ?: t::class.java.simpleName
+            false
         }
-        return ok
+        if (!ok) return false
+        loadedName = model.displayName
+        try {
+            environment.install(lightState)
+            lastBounds = models.bounds()
+            fitCamera()
+        } catch (t: Throwable) {
+            android.util.Log.e(TAG, "failed to prepare the scene", t)
+            lastError = t.message ?: t::class.java.simpleName
+            return false
+        }
+        return true
+    }
+
+    private var lastBounds: FloatArray? = null
+
+    /** Scales the model to fit the current viewport, accounting for its aspect ratio. */
+    /** Re-frames the loaded model to fill the viewport. */
+    fun resetFraming() {
+        orbit.reset()
+        fitCamera()
+    }
+
+    private fun fitCamera() {
+        val bounds = lastBounds ?: return
+        val aspect = (viewportWidth.toFloat() / viewportHeight.toFloat()).coerceAtLeast(0.1f)
+        orbit.fit(
+            minX = bounds[0], minY = bounds[1], minZ = bounds[2],
+            maxX = bounds[3], maxY = bounds[4], maxZ = bounds[5],
+            aspect = aspect
+        )
     }
 
     fun setMaterial(state: MaterialState, overrideModelMaterials: Boolean) {

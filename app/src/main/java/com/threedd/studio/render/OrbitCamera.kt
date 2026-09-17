@@ -30,6 +30,30 @@ class OrbitCamera(private val camera: Camera) {
         distance = (height * 2.35f).coerceIn(0.7f, 9.0f)
     }
 
+    /**
+     * Scales the subject to fill the viewport: the distance is chosen so the model's larger
+     * dimension fits the frustum with a small margin, and the camera looks at its centre.
+     */
+    fun fit(minX: Float, minY: Float, minZ: Float, maxX: Float, maxY: Float, maxZ: Float, aspect: Float) {
+        val width = (maxX - minX).coerceAtLeast(0.01f)
+        val height = (maxY - minY).coerceAtLeast(0.01f)
+        val depth = (maxZ - minZ).coerceAtLeast(0.01f)
+        targetX = (minX + maxX) / 2f
+        targetY = (minY + maxY) / 2f
+        targetZ = (minZ + maxZ) / 2f
+
+        val halfFov = Math.toRadians(fovDegrees.toDouble() / 2.0)
+        val vertical = (height / 2f) / halfFov.let { kotlin.math.tan(it) }.toFloat()
+        val horizontal = ((width / 2f) / aspect) / halfFov.let { kotlin.math.tan(it) }.toFloat()
+        val needed = maxOf(vertical, horizontal, depth) * FIT_MARGIN
+        distance = needed.coerceIn(0.4f, 20.0f)
+    }
+
+    companion object {
+        /** Extra room around the subject so it never touches the viewport edges. */
+        private const val FIT_MARGIN = 1.35f
+    }
+
     fun reset() {
         azimuth = 0f
         elevation = 0.08f

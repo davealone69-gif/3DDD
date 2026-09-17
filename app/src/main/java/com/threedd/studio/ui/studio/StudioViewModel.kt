@@ -38,6 +38,7 @@ data class StudioUiState(
     val speed: Float = 1f,
     val loop: Boolean = true,
     val overrideModelMaterials: Boolean = true,
+    val morphNames: List<String> = emptyList(),
     val matureUnlocked: Boolean = false,
     val loading: Boolean = false,
     val status: String? = null,
@@ -102,7 +103,9 @@ class StudioViewModel @Inject constructor(
             val clips = renderer.models.animations()
             _state.update {
                 it.copy(model = model, loading = false, animations = clips,
-                    animationIndex = 0, playing = clips.isNotEmpty(), status = "Loaded ${model.displayName}")
+                    animationIndex = 0, playing = clips.isNotEmpty(),
+                    morphNames = renderer.models.morphTargetNames,
+                    status = "Loaded ${model.displayName}")
             }
             audio.play(AudioEngine.Cue.SELECT)
         }
@@ -164,7 +167,29 @@ class StudioViewModel @Inject constructor(
     fun stopPlayback() = _state.update { it.copy(playing = false) }
     fun setSpeed(speed: Float) = _state.update { it.copy(speed = speed.coerceIn(0.1f, 3f)) }
     fun setLoop(loop: Boolean) = _state.update { it.copy(loop = loop) }
-    fun resetCamera() = renderer.orbit.reset()
+    fun resetCamera() {
+        renderer.resetFraming()
+        audio.play(AudioEngine.Cue.TAP)
+    }
+
+    /** Drives one morph target directly, used by the body sliders. */
+    fun setMorphWeight(name: String, value: Float) {
+        val updated = _state.value.morphWeights.toMutableMap()
+        updated[name] = value.coerceIn(0f, 1f)
+        _state.update { it.copy(morphWeights = updated) }
+        renderer.setMorphWeights(updated)
+    }
+
+    /** Picks a random body preset, material preset and light rig. */
+    fun randomize() {
+        val preset = Presets.bodyPresets.filter { !it.mature || _state.value.matureUnlocked }.random()
+        val materialName = Presets.materialPresets.keys.random()
+        val lightName = Presets.lightPresets.keys.random()
+        selectBodyPreset(preset.id)
+        applyMaterialPreset(materialName)
+        applyLightPreset(lightName)
+        audio.play(AudioEngine.Cue.SELECT)
+    }
 
     fun saveDesign(name: String) {
         val current = _state.value

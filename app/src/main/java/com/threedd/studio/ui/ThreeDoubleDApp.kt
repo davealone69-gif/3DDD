@@ -14,6 +14,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.threedd.studio.ui.about.AboutScreen
@@ -43,8 +44,12 @@ fun ThreeDoubleDApp() {
                     NavigationBarItem(
                         selected = currentRoute == tab.destination.route,
                         onClick = {
+                            // Pop back to the start destination so every tab - including
+                            // Studio - is always reachable, and never stack duplicates.
                             navController.navigate(tab.destination.route) {
-                                popUpTo(Destination.Studio.route) { saveState = true }
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
                                 launchSingleTop = true
                                 restoreState = true
                             }

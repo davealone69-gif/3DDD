@@ -38,8 +38,28 @@ class MaterialFactory(private val engine: Engine) {
     private var white: Texture? = null
     private var neutralNormal: Texture? = null
 
+    /** True when the full PBR material could not be built and a simplified one is in use. */
+    var degraded = false
+        private set
+
+    /**
+     * Builds the studio PBR material, falling back to a parameter-only material if the driver
+     * refuses it. A degraded material still lights and shades the model, so the viewport is
+     * never blank; the failure is logged and surfaced rather than thrown at the UI.
+     */
     private fun variant(alphaMode: Int): Material {
         materials[alphaMode]?.let { return it }
+        val built = runCatching { buildFull(alphaMode) }
+            .getOrElse { error ->
+                android.util.Log.e(TAG, "full material failed to build; using the simplified material", error)
+                degraded = true
+                buildMinimal(alphaMode)
+            }
+        materials[alphaMode] = built
+        return built
+    }
+
+    private fun buildFull(alphaMode: Int): Material {
         val builder = MaterialBuilder()
             .name("studioPbr$alphaMode")
             .shading(MaterialBuilder.Shading.LIT)
@@ -88,21 +108,41 @@ class MaterialFactory(private val engine: Engine) {
             )
             .material(FRAGMENT_SOURCE)
         if (alphaMode == 1) builder.maskThreshold(0.5f)
+        return finish(builder, alphaMode)
+    }
 
+    /** Factors only: no samplers, no texture fetches, no extra vertex requirements. */
+    private fun buildMinimal(alphaMode: Int): Material {
+        val builder = MaterialBuilder()
+            .name("studioFallback$alphaMode")
+            .shading(MaterialBuilder.Shading.LIT)
+            .targetApi(targetApi())
+            .blending(
+                when (alphaMode) {
+                    1 -> MaterialBuilder.BlendingMode.MASKED
+                    2 -> MaterialBuilder.BlendingMode.TRANSPARENT
+                    else -> MaterialBuilder.BlendingMode.OPAQUE
+                }
+            )
+            .uniformParameter(MaterialBuilder.UniformType.FLOAT4, "baseColor")
+            .uniformParameter(MaterialBuilder.UniformType.FLOAT, "metallic")
+            .uniformParameter(MaterialBuilder.UniformType.FLOAT, "roughness")
+            .uniformParameter(MaterialBuilder.UniformType.FLOAT3, "emissive")
+            .uniformParameter(MaterialBuilder.UniformType.FLOAT, "emissiveIntensity")
+            .material(MINIMAL_FRAGMENT_SOURCE)
+        if (alphaMode == 1) builder.maskThreshold(0.5f)
+        return finish(builder, alphaMode)
+    }
+
+    private fun finish(builder: MaterialBuilder, alphaMode: Int): Material {
         val packageResult = builder.build(engine)
         val payload = packageResult.buffer
         if (payload.capacity() <= 0) {
-            android.util.Log.e(TAG, "filamat failed to compile studioPbr$alphaMode; see the filamat lines in logcat")
             error("studioPbr material failed to compile (alphaMode=$alphaMode)")
         }
-        if (engine.backend == Engine.Backend.NOOP) {
-            android.util.Log.e(TAG, "engine is on the NOOP driver; material creation cannot succeed")
-        }
-        val material = guarded({ "create Material (backend=${engine.backend}, bytes=${payload.remaining()})" }) {
+        return guarded({ "create Material (backend=${engine.backend}, bytes=${payload.remaining()})" }) {
             Material.Builder().payload(payload, payload.remaining()).build(engine)
         }
-        materials[alphaMode] = material
-        return material
     }
 
     private fun targetApi(): MaterialBuilder.TargetApi = when (engine.backend) {
@@ -135,6 +175,7 @@ class MaterialFactory(private val engine: Engine) {
     }
 
     fun bind(instance: MaterialInstance, textures: TextureSet?) {
+        if (degraded) return
         val fallback = TextureSampler(TextureSampler.MinFilter.LINEAR, TextureSampler.MagFilter.LINEAR, TextureSampler.WrapMode.CLAMP_TO_EDGE)
         instance.setParameter("baseColorMap", textures?.baseColor ?: whiteTexture(), fallback)
         instance.setParameter("metallicRoughnessMap", textures?.metallicRoughness ?: whiteTexture(), fallback)
@@ -266,6 +307,16 @@ class MaterialFactory(private val engine: Engine) {
 
     companion object {
         const val TAG = "3DoubleD-Material"
+        private const val MINIMAL_FRAGMENT_SOURCE = """
+            void material(inout MaterialInputs material) {
+                prepareMaterial(material);
+                material.baseColor = materialParams.baseColor;
+                material.metallic = materialParams.metallic;
+                material.roughness = materialParams.roughness;
+                material.emissive.rgb = materialParams.emissive * materialParams.emissiveIntensity;
+            }
+        """
+
         private const val FRAGMENT_SOURCE = """
             void material(inout MaterialInputs material) {
                 prepareMaterial(material);

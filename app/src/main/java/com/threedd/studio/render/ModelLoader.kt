@@ -73,6 +73,8 @@ class ModelLoader(
     private val scratch16 = FloatArray(16)
     private val scratch16b = FloatArray(16)
 
+    fun bounds(): FloatArray = bounds.copyOf()
+
     val boundingHeight: Float
         get() = (bounds[4] - bounds[1]).takeIf { it > 0.01f } ?: 1.8f
 
