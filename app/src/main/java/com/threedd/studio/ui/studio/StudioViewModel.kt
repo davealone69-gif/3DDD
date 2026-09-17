@@ -60,7 +60,7 @@ class StudioViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             models.importedModels.collect { imported ->
-                _state.update { it.copy(models = models.builtInModels + imported) }
+                _state.update { it.copy(models = ModelRepository.builtInModels + imported) }
             }
         }
         viewModelScope.launch {
@@ -220,7 +220,7 @@ class StudioViewModel @Inject constructor(
         renderer.detach()
     }
 
-    val builtInModels: List<AvatarModel> get() = models.builtInModels
+    val builtInModels: List<AvatarModel> get() = ModelRepository.builtInModels
     val sources: List<ModelSource> get() = ModelSource.entries.toList()
     val qualities: List<QualityPreset> get() = QualityPreset.entries.toList()
 }

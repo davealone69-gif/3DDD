@@ -48,7 +48,7 @@ class LibraryViewModel @Inject constructor(
                 }
             }
         }
-        _state.update { it.copy(builtIn = models.builtInModels) }
+        _state.update { it.copy(builtIn = ModelRepository.builtInModels) }
         viewModelScope.launch { avatars.designs.collect { list -> _state.update { it.copy(designs = list) } } }
         viewModelScope.launch { settings.snapshot.collect { s -> _state.update { it.copy(matureUnlocked = s.ageVerified) } } }
     }

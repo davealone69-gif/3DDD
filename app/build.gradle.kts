@@ -96,5 +96,6 @@ dependencies {
     // Real org.json implementation so the glTF reader and GLB writer are testable on the JVM.
     testImplementation("org.json:json:20240303")
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation("androidx.test:core-ktx:1.6.1")
     androidTestImplementation(libs.androidx.espresso.core)
 }

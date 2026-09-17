@@ -28,14 +28,6 @@ class ModelRepository @Inject constructor(
     private val modelsDir: File get() = File(context.filesDir, "models").apply { mkdirs() }
     private val scansDir: File get() = File(context.filesDir, "scans").apply { mkdirs() }
 
-    /** Built-in models are procedural rigs; they carry no external file. */
-    val builtInModels: List<AvatarModel> = listOf(
-        AvatarModel("builtin_female", "Female base model", ModelSource.BUILTIN, "rig://female"),
-        AvatarModel("builtin_male", "Male base model", ModelSource.BUILTIN, "rig://male"),
-        AvatarModel("builtin_cyborg", "Cyborg base model", ModelSource.BUILTIN, "rig://cyborg"),
-        AvatarModel("builtin_androgynous", "Androgynous base model", ModelSource.BUILTIN, "rig://androgynous")
-    )
-
     val importedModels: Flow<List<AvatarModel>> = dao.observeModels().map { rows ->
         rows.map { row ->
             AvatarModel(
@@ -151,5 +143,13 @@ class ModelRepository @Inject constructor(
 
     companion object {
         val SUPPORTED_EXTENSIONS = setOf("glb", "gltf")
+
+        /** Built-in rigs are generated GLB assets shipped in the APK. */
+        val builtInModels: List<AvatarModel> = listOf(
+            AvatarModel("builtin_female", "Female base model", ModelSource.BUILTIN, "models/female.glb"),
+            AvatarModel("builtin_male", "Male base model", ModelSource.BUILTIN, "models/male.glb"),
+            AvatarModel("builtin_cyborg", "Cyborg base model", ModelSource.BUILTIN, "models/cyborg.glb"),
+            AvatarModel("builtin_androgynous", "Androgynous base model", ModelSource.BUILTIN, "models/androgynous.glb")
+        )
     }
 }
