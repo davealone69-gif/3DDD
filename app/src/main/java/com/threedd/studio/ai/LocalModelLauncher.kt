@@ -38,9 +38,11 @@ import javax.inject.Singleton
 @Singleton
 class LocalModelLauncher @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val bridge: TermuxBridge,
-    private val machine: ServerStateMachine = ServerStateMachine()
+    private val bridge: TermuxBridge
 ) {
+
+    /** Owned internally: it is this launcher's state, not a dependency Hilt should supply. */
+    private val machine = ServerStateMachine()
 
     enum class Phase { NOT_STARTED, PROBING, RUNNING, STARTING, NO_BINARY, NO_MODEL, EXEC_BLOCKED, FAILED, STOPPED }
 
