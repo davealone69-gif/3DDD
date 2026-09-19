@@ -77,7 +77,7 @@ class ServerStateMachine(
                     detail = detail.ifBlank { "Waiting for the server to answer" },
                     consecutiveMisses = misses
                 )
-                state == State.ONLINE || misses >= offlineAfterMisses -> status.copy(
+                status.state == State.ONLINE || misses >= offlineAfterMisses -> status.copy(
                     state = State.OFFLINE,
                     detail = detail.ifBlank { "Server is not answering" },
                     consecutiveMisses = misses,

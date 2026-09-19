@@ -32,6 +32,7 @@ class TermuxBridge @Inject constructor(@ApplicationContext private val context: 
     companion object {
         const val TERMUX_PACKAGE = "com.termux"
         const val RUN_COMMAND_PERMISSION = "com.termux.permission.RUN_COMMAND"
+        private const val TAG = "3DoubleD-Termux"
         private const val RUN_COMMAND_SERVICE = "com.termux.app.RunCommandService"
         private const val ACTION_RUN_COMMAND = "com.termux.RUN_COMMAND"
         private const val EXTRA_PATH = "com.termux.RUN_COMMAND_PATH"
@@ -131,5 +132,4 @@ class TermuxBridge @Inject constructor(@ApplicationContext private val context: 
         return runScript(script, background = true)
     }
 
-    private const val TAG = "3DoubleD-Termux"
 }
