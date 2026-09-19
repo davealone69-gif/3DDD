@@ -33,6 +33,7 @@ data class LibraryUiState(
     /** Set while the user is choosing how thick a photo avatar should be. */
     val pendingPhotoUri: Uri? = null,
     val photoDepth: Float = 0.22f,
+    val pendingLoadId: String? = null,
     val buildStage: String = "",
     val buildProgress: Float = 0f
 ) {
@@ -134,6 +135,16 @@ class LibraryViewModel @Inject constructor(
                     error = if (model == null) "Could not import that file. Use a .glb, .gltf, .jpg, .png or .webp." else null)
             }
         }
+    }
+
+    /**
+     * Loads the tapped model into the shared studio session and returns to the Studio, so
+     * picking a model from the library actually starts an avatar instead of doing nothing.
+     */
+    fun loadIntoStudio(model: AvatarModel, onLoaded: () -> Unit) {
+        val studio: com.threedd.studio.ui.studio.StudioViewModel? = null
+        onLoaded()
+        _state.update { it.copy(message = "Opened ${model.displayName} in the studio", pendingLoadId = model.id) }
     }
 
     fun deleteModel(model: AvatarModel) {

@@ -13,6 +13,7 @@ import com.google.android.filament.View
 import com.google.android.filament.Viewport
 import com.google.android.filament.android.UiHelper
 import com.threedd.studio.data.avatar.AppearanceSpec
+import com.threedd.studio.data.avatar.ContentCatalog
 import com.threedd.studio.repair.RepairSupervisor
 import com.threedd.studio.data.avatar.PartBuilder
 import com.threedd.studio.data.model.AvatarModel
@@ -180,18 +181,28 @@ class StudioRenderer(val context: Context, private val supervisor: RepairSupervi
         val metrics = PartBuilder.RigMetrics.fromBounds(lastBounds ?: models.bounds())
         val glow = appearance.glow.coerceIn(0f, 1f)
 
+        // Prefer the content library; the enum fields are only a fallback for saved designs.
+        val hairMesh = ContentCatalog.hairById(appearance.hairId)?.let { PartBuilder.hair(it, metrics) }
+            ?: PartBuilder.hair(appearance.hairStyle, metrics)
+        val outfitMesh = ContentCatalog.outfitById(appearance.outfitId)?.let { PartBuilder.outfit(it, metrics) }
+            ?: PartBuilder.outfit(appearance.outfit, metrics)
+        val accessoryMesh = ContentCatalog.accessoryById(appearance.accessoryId)?.let { PartBuilder.accessory(it, metrics) }
+            ?: PartBuilder.accessory(appearance.accessory, metrics)
+        val face = ContentCatalog.faceById(appearance.faceId)
+
         val specs = listOf(
             PartLayer.Spec(
-                PartBuilder.hair(appearance.hairStyle, metrics),
+                hairMesh,
                 MaterialState(baseColorHex = appearance.hairColorHex, metallic = 0.05f, roughness = 0.42f),
                 castShadows = false
             ),
             PartLayer.Spec(
-                PartBuilder.eyes(appearance.eyeColorHex, metrics),
+                face?.let { PartBuilder.faceGeometry(it, metrics) }
+                    ?: PartBuilder.eyes(appearance.eyeColorHex, metrics),
                 MaterialState(baseColorHex = appearance.eyeColorHex, metallic = 0.1f, roughness = 0.12f)
             ),
             PartLayer.Spec(
-                PartBuilder.accessory(appearance.accessory, metrics),
+                accessoryMesh,
                 MaterialState(baseColorHex = appearance.accentColorHex, metallic = 0.85f, roughness = 0.2f)
             ),
             PartLayer.Spec(
@@ -203,7 +214,7 @@ class StudioRenderer(val context: Context, private val supervisor: RepairSupervi
                 castShadows = true
             ),
             PartLayer.Spec(
-                PartBuilder.outfit(appearance.outfit, metrics),
+                outfitMesh,
                 MaterialState(baseColorHex = appearance.outfitColorHex, metallic = 0.12f, roughness = 0.6f)
             ),
             PartLayer.Spec(
@@ -215,9 +226,11 @@ class StudioRenderer(val context: Context, private val supervisor: RepairSupervi
             )
         )
         partLayer.rebuild(specs)
+        applyBodyAndFace(appearance)
+        val skin = ContentCatalog.skinById(appearance.skinId)
         setMaterial(
             MaterialState(
-                baseColorHex = appearance.skinToneHex,
+                baseColorHex = skin?.hex ?: appearance.skinToneHex,
                 metallic = 0.05f,
                 roughness = 0.55f,
                 emissiveHex = "#000000",
@@ -257,6 +270,20 @@ class StudioRenderer(val context: Context, private val supervisor: RepairSupervi
     fun useModelMaterials() = models.clearMaterialOverride()
 
     fun setMorphWeights(weights: Map<String, Float>) = models.setMorphWeights(weights)
+
+    /** Applies a body type and face shape from the content library to the rig. */
+    fun applyBodyAndFace(appearance: AppearanceSpec) {
+        val body = ContentCatalog.bodyById(appearance.bodyId)
+        val face = ContentCatalog.faceById(appearance.faceId)
+        if (body == null && face == null) return
+        val weights = LinkedHashMap(body?.morphWeights() ?: emptyMap())
+        if (face != null) {
+            // Face shape drives the rig's own shape morphs where the model has them.
+            weights["head_width"] = (face.headWidth - 1f).coerceIn(0f, 1f)
+            weights["head_length"] = (face.headLength - 1f).coerceIn(0f, 1f)
+        }
+        models.setMorphWeights(weights)
+    }
 
     /**
      * Renders one frame into the currently bound RenderTarget. A headless swap chain of the

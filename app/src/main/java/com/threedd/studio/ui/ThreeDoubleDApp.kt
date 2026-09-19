@@ -80,7 +80,14 @@ fun ThreeDoubleDApp() {
                 )
             }
             composable(Destination.Library.route) {
-                LibraryScreen(onOpenScan = { navController.navigate(Destination.Scan.route) })
+                LibraryScreen(
+                    onOpenScan = { navController.navigate(Destination.Scan.route) },
+                    onOpenStudio = { navController.navigate(Destination.Studio.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    } }
+                )
             }
             composable(Destination.Material.route) { MaterialScreen() }
             composable(Destination.Motion.route) { MotionScreen() }

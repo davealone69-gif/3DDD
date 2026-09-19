@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -54,6 +56,7 @@ import com.threedd.studio.ui.theme.Surface2
 @Composable
 fun LibraryScreen(
     onOpenScan: () -> Unit,
+    onOpenStudio: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -141,27 +144,35 @@ fun LibraryScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 item { SectionTitle("Built-in rigs") }
-                items(state.builtIn, key = { it.id }) { model -> ModelRow(model) { } }
+                items(state.builtIn, key = { it.id }) { model ->
+                    ModelRow(model, onLoad = { viewModel.loadIntoStudio(model, onOpenStudio) }, onDelete = null)
+                }
 
                 item { SectionTitle("From image") }
                 if (state.photos.isEmpty()) {
                     item { Text("No photo avatars yet.", color = NeonCyan.copy(alpha = 0.7f)) }
                 } else {
-                    items(state.photos, key = { it.id }) { model -> ModelRow(model) { viewModel.deleteModel(model) } }
+                    items(state.photos, key = { it.id }) { model ->
+                        ModelRow(model, onLoad = { viewModel.loadIntoStudio(model, onOpenStudio) }, onDelete = { viewModel.deleteModel(model) })
+                    }
                 }
 
                 item { SectionTitle("Imported") }
                 if (state.imported.isEmpty()) {
                     item { Text("Nothing imported yet.", color = NeonCyan.copy(alpha = 0.7f)) }
                 } else {
-                    items(state.imported, key = { it.id }) { model -> ModelRow(model) { viewModel.deleteModel(model) } }
+                    items(state.imported, key = { it.id }) { model ->
+                        ModelRow(model, onLoad = { viewModel.loadIntoStudio(model, onOpenStudio) }, onDelete = { viewModel.deleteModel(model) })
+                    }
                 }
 
                 item { SectionTitle("Scanned") }
                 if (state.scanned.isEmpty()) {
                     item { Text("No scans yet.", color = NeonCyan.copy(alpha = 0.7f)) }
                 } else {
-                    items(state.scanned, key = { it.id }) { model -> ModelRow(model) { viewModel.deleteModel(model) } }
+                    items(state.scanned, key = { it.id }) { model ->
+                        ModelRow(model, onLoad = { viewModel.loadIntoStudio(model, onOpenStudio) }, onDelete = { viewModel.deleteModel(model) })
+                    }
                 }
 
                 item { SectionTitle("Saved avatars") }
@@ -206,10 +217,10 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun ModelRow(model: AvatarModel, onDelete: () -> Unit) {
+private fun ModelRow(model: AvatarModel, onLoad: () -> Unit, onDelete: (() -> Unit)?) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Surface2),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onLoad)
     ) {
         Row(
             Modifier.fillMaxWidth().padding(14.dp),
@@ -227,9 +238,10 @@ private fun ModelRow(model: AvatarModel, onDelete: () -> Unit) {
                     color = NeonCyan
                 )
             }
-            if (!model.isAsset) {
+            if (onDelete != null) {
                 IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "Delete") }
             }
+            Icon(Icons.Filled.PlayArrow, "Load into studio", tint = NeonCyan)
         }
     }
 }
