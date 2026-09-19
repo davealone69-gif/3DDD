@@ -135,8 +135,8 @@ class LocalLlamaAdvisor @Inject constructor(@ApplicationContext private val cont
     }
 
     private companion object {
-        const val DEFAULT_ENDPOINT = "http://127.0.0.1:8088"
-        const val DEFAULT_MODEL = "llama-3.2-3b-instruct"
+        const val DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
+        const val DEFAULT_MODEL = "llama3.2:1b"
         const val SYSTEM_PROMPT =
             "You are the diagnostics assistant inside an Android 3D avatar studio. " +
                 "Answer in at most four sentences. Be concrete and mention which screen or setting to use. " +
