@@ -84,13 +84,22 @@ class ServerStateMachineTest {
     }
 
     @Test
-    fun `transient misses while online do not immediately drop the state`() {
+    fun `an online server that fails a health check is reported offline at once`() {
+        // Accuracy over comfort: we must not keep claiming ONLINE while the check is failing.
         val machine = ServerStateMachine(offlineAfterMisses = 3)
         machine.onStartRequested(0L)
-        machine.onProbe(true, 100L)
-        assertEquals(State.ONLINE, machine.onProbe(false, 200L).state)
-        assertEquals(State.ONLINE, machine.onProbe(false, 300L).state)
-        // the third consecutive miss is treated as a real outage
-        assertEquals(State.OFFLINE, machine.onProbe(false, 400L).state)
+        assertEquals(State.ONLINE, machine.onProbe(true, 100L).state)
+        val afterMiss = machine.onProbe(false, 200L)
+        assertEquals(State.OFFLINE, afterMiss.state)
+        assertFalse(afterMiss.online)
+    }
+
+    @Test
+    fun `repeated misses while offline stay offline and are counted`() {
+        val machine = ServerStateMachine(offlineAfterMisses = 3)
+        machine.onProbe(false, 100L)
+        val second = machine.onProbe(false, 200L)
+        assertEquals(State.OFFLINE, second.state)
+        assertTrue(second.consecutiveMisses >= 2)
     }
 }
