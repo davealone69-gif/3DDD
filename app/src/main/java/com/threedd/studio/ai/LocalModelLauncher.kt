@@ -255,7 +255,7 @@ class LocalModelLauncher @Inject constructor(@ApplicationContext private val con
             ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
 
     companion object {
-        const val DEFAULT_ENDPOINT = "http://127.0.0.1:8088"
+        const val DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
         private const val HEALTH_ATTEMPTS = 20
         private const val HEALTH_INTERVAL_MS = 900L
     }
