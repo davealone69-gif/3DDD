@@ -126,6 +126,7 @@ fun StudioScreen(
     onOpenScan: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenAgeGate: () -> Unit,
+    initialModelId: String = "",
     onOpenAbout: () -> Unit,
     onOpenDiagnostics: () -> Unit = {},
     onOpenExport: () -> Unit,
@@ -138,6 +139,11 @@ fun StudioScreen(
     var menuOpen by remember { mutableStateOf(false) }
     var saveDialog by remember { mutableStateOf(false) }
     var designName by remember { mutableStateOf("MATRIX_07") }
+
+    // a model chosen in the library is loaded here, once
+    androidx.compose.runtime.LaunchedEffect(initialModelId) {
+        if (initialModelId.isNotBlank()) viewModel.loadModelById(initialModelId)
+    }
 
     Scaffold(
         containerColor = Ink,

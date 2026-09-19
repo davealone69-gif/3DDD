@@ -56,7 +56,7 @@ import com.threedd.studio.ui.theme.Surface2
 @Composable
 fun LibraryScreen(
     onOpenScan: () -> Unit,
-    onOpenStudio: () -> Unit = {},
+    onOpenStudio: (String) -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -145,7 +145,7 @@ fun LibraryScreen(
             ) {
                 item { SectionTitle("Built-in rigs") }
                 items(state.builtIn, key = { it.id }) { model ->
-                    ModelRow(model, onLoad = { viewModel.loadIntoStudio(model, onOpenStudio) }, onDelete = null)
+                    ModelRow(model, onLoad = { viewModel.openInStudio(model, onOpenStudio) }, onDelete = null)
                 }
 
                 item { SectionTitle("From image") }
@@ -153,7 +153,7 @@ fun LibraryScreen(
                     item { Text("No photo avatars yet.", color = NeonCyan.copy(alpha = 0.7f)) }
                 } else {
                     items(state.photos, key = { it.id }) { model ->
-                        ModelRow(model, onLoad = { viewModel.loadIntoStudio(model, onOpenStudio) }, onDelete = { viewModel.deleteModel(model) })
+                        ModelRow(model, onLoad = { viewModel.openInStudio(model, onOpenStudio) }, onDelete = { viewModel.deleteModel(model) })
                     }
                 }
 
@@ -162,7 +162,7 @@ fun LibraryScreen(
                     item { Text("Nothing imported yet.", color = NeonCyan.copy(alpha = 0.7f)) }
                 } else {
                     items(state.imported, key = { it.id }) { model ->
-                        ModelRow(model, onLoad = { viewModel.loadIntoStudio(model, onOpenStudio) }, onDelete = { viewModel.deleteModel(model) })
+                        ModelRow(model, onLoad = { viewModel.openInStudio(model, onOpenStudio) }, onDelete = { viewModel.deleteModel(model) })
                     }
                 }
 
@@ -171,7 +171,7 @@ fun LibraryScreen(
                     item { Text("No scans yet.", color = NeonCyan.copy(alpha = 0.7f)) }
                 } else {
                     items(state.scanned, key = { it.id }) { model ->
-                        ModelRow(model, onLoad = { viewModel.loadIntoStudio(model, onOpenStudio) }, onDelete = { viewModel.deleteModel(model) })
+                        ModelRow(model, onLoad = { viewModel.openInStudio(model, onOpenStudio) }, onDelete = { viewModel.deleteModel(model) })
                     }
                 }
 

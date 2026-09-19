@@ -121,6 +121,13 @@ class StudioViewModel @Inject constructor(
         }
     }
 
+    /** Loads a model by id from whatever the studio currently knows about. */
+    fun loadModelById(id: String) {
+        val model = _state.value.models.firstOrNull { it.id == id }
+            ?: ModelRepository.builtInModels.firstOrNull { it.id == id }
+        if (model != null && model.id != _state.value.model?.id) loadModel(model)
+    }
+
     fun selectBodyPreset(id: String) {
         val preset = Presets.preset(id) ?: return
         if (preset.mature && !_state.value.matureUnlocked) {

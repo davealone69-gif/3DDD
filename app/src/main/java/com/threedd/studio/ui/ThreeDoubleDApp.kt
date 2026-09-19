@@ -10,6 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import android.net.Uri
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -56,7 +57,7 @@ fun ThreeDoubleDApp() {
                             }
                         },
                         icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) }
+                        label = { Text(tab.label, maxLines = 1) }
                     )
                 }
             }
@@ -67,8 +68,14 @@ fun ThreeDoubleDApp() {
             startDestination = Destination.Studio.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(Destination.Studio.route) {
+            composable(
+                route = Destination.Studio.route + "?modelId={modelId}",
+                arguments = listOf(navArgument("modelId") {
+                    type = NavType.StringType; defaultValue = ""
+                })
+            ) { entry ->
                 StudioScreen(
+                    initialModelId = entry.arguments?.getString("modelId").orEmpty(),
                     onOpenLibrary = { navController.navigate(Destination.Library.route) },
                     onOpenLighting = { navController.navigate(Destination.Lighting.route) },
                     onOpenScan = { navController.navigate(Destination.Scan.route) },
@@ -82,11 +89,11 @@ fun ThreeDoubleDApp() {
             composable(Destination.Library.route) {
                 LibraryScreen(
                     onOpenScan = { navController.navigate(Destination.Scan.route) },
-                    onOpenStudio = { navController.navigate(Destination.Studio.route) {
-                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    } }
+                    onOpenStudio = { modelId ->
+                        navController.navigate(Destination.Studio.route + "?modelId=" + Uri.encode(modelId)) {
+                            launchSingleTop = true
+                        }
+                    }
                 )
             }
             composable(Destination.Material.route) { MaterialScreen() }
