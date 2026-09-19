@@ -81,6 +81,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.threedd.studio.data.avatar.AppearanceSpec
+import com.threedd.studio.data.avatar.ContentCatalog
 import com.threedd.studio.data.model.Presets
 import com.threedd.studio.data.repository.ModelRepository
 import com.threedd.studio.ui.components.FilamentViewport
@@ -473,6 +474,11 @@ private fun AppearancePanel(state: StudioUiState, viewModel: StudioViewModel, on
 
 @Composable
 private fun BodyPanel(state: StudioUiState, viewModel: StudioViewModel) {
+    OptionRow("Body type (${ContentCatalog.bodies.size})", ContentCatalog.bodies.map { it.id to it.label },
+        state.appearance.bodyId ?: "") { id ->
+        viewModel.updateAppearance(state.appearance.copy(bodyId = id))
+    }
+
     SectionTitle("Body presets")
     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         items(Presets.bodyPresets) { preset ->
@@ -646,8 +652,8 @@ private fun ColourRow(label: String, colours: List<String>, selected: String, on
 @Composable
 private fun HairPanel(state: StudioUiState, viewModel: StudioViewModel) {
     val a = state.appearance
-    OptionRow("Hair style", AppearanceSpec.HairStyle.entries.map { it.id to it.label },
-        a.hairStyle) { viewModel.updateAppearance(a.copy(hairStyle = it)) }
+    OptionRow("Hair style (${ContentCatalog.hair.size})", ContentCatalog.hair.map { it.id to it.label },
+        a.hairId ?: "") { viewModel.updateAppearance(a.copy(hairId = it)) }
     ColourRow("Hair colour", a.palettes.getValue("Hair"), a.hairColorHex) {
         viewModel.updateAppearance(a.copy(hairColorHex = it))
     }
@@ -656,14 +662,16 @@ private fun HairPanel(state: StudioUiState, viewModel: StudioViewModel) {
 @Composable
 private fun FacePanel(state: StudioUiState, viewModel: StudioViewModel) {
     val a = state.appearance
-    OptionRow("Face shape", AppearanceSpec.FaceShape.entries.map { it.id to it.label },
-        a.faceShape) { viewModel.updateAppearance(a.copy(faceShape = it)) }
+    OptionRow("Face (${ContentCatalog.faces.size})", ContentCatalog.faces.map { it.id to it.label },
+        a.faceId ?: "") { viewModel.updateAppearance(a.copy(faceId = it)) }
     OptionRow("Style", AppearanceSpec.STYLES.map { it to it }, a.style) {
         viewModel.updateAppearance(a.copy(style = it))
     }
-    SectionTitle("Skin tone")
-    ColourRow("Skin", a.palettes.getValue("Skin"), a.skinToneHex) {
-        viewModel.updateAppearance(a.copy(skinToneHex = it))
+    OptionRow("Skin tone (${ContentCatalog.skins.size})",
+        ContentCatalog.skins.map { it.id to it.label }, a.skinId ?: ""
+    ) { id ->
+        val skin = ContentCatalog.skinById(id)
+        viewModel.updateAppearance(a.copy(skinId = id, skinToneHex = skin?.hex ?: a.skinToneHex))
     }
 }
 
@@ -684,8 +692,8 @@ private fun EyesPanel(state: StudioUiState, viewModel: StudioViewModel) {
 @Composable
 private fun ClothingPanel(state: StudioUiState, viewModel: StudioViewModel) {
     val a = state.appearance
-    OptionRow("Outfit", AppearanceSpec.Outfit.entries.map { it.id to it.label },
-        a.outfit) { viewModel.updateAppearance(a.copy(outfit = it)) }
+    OptionRow("Outfit (${ContentCatalog.outfits.size})", ContentCatalog.outfits.map { it.id to it.label },
+        a.outfitId ?: "") { viewModel.updateAppearance(a.copy(outfitId = it)) }
     ColourRow("Fabric colour", a.palettes.getValue("Accent") + a.palettes.getValue("Hair").take(4),
         a.outfitColorHex) { viewModel.updateAppearance(a.copy(outfitColorHex = it)) }
 }
@@ -693,8 +701,9 @@ private fun ClothingPanel(state: StudioUiState, viewModel: StudioViewModel) {
 @Composable
 private fun AccessoriesPanel(state: StudioUiState, viewModel: StudioViewModel) {
     val a = state.appearance
-    OptionRow("Accessory", AppearanceSpec.Accessory.entries.map { it.id to it.label },
-        a.accessory) { viewModel.updateAppearance(a.copy(accessory = it)) }
+    OptionRow("Accessory (${ContentCatalog.accessories.size})",
+        ContentCatalog.accessories.map { it.id to it.label }, a.accessoryId ?: ""
+    ) { viewModel.updateAppearance(a.copy(accessoryId = it)) }
 }
 
 @Composable

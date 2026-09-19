@@ -31,7 +31,9 @@ data class DiagnosticsUiState(
     val installedModels: List<String> = emptyList(),
     val manualCommand: String = "",
     val exportedPath: String? = null,
-    val endpointDraft: String = ""
+    val endpointDraft: String = "",
+    val availableModels: List<String> = emptyList(),
+    val selectedModel: String = ""
 )
 
 @HiltViewModel
@@ -123,8 +125,9 @@ class DiagnosticsViewModel @Inject constructor(
     fun startServer() {
         viewModelScope.launch {
             val status = launcher.start()
-            advisor.configureLocal(status.endpoint, "")
+            advisor.configureLocal(status.endpoint, _state.value.selectedModel)
             _state.update { it.copy(localModelReachable = status.running) }
+            if (status.running) refreshModels()
         }
     }
 
@@ -142,13 +145,35 @@ class DiagnosticsViewModel @Inject constructor(
         launcher.setEndpoint(if (value.startsWith("http")) value else "http://$value")
         viewModelScope.launch {
             val status = launcher.start()
-            advisor.configureLocal(status.endpoint, "")
+            advisor.configureLocal(status.endpoint, _state.value.selectedModel)
             _state.update { it.copy(server = status, manualCommand = launcher.manualCommand()) }
+            if (status.running) refreshModels()
         }
     }
 
     fun probeServer() {
-        viewModelScope.launch { launcher.probe() }
+        viewModelScope.launch {
+            val alive = launcher.probe()
+            if (alive) refreshModels()
+        }
+    }
+
+    /** Reads the live model list from the server; nothing is hard coded. */
+    fun refreshModels() {
+        viewModelScope.launch {
+            val models = launcher.fetchModels()
+            _state.update {
+                it.copy(
+                    availableModels = models,
+                    selectedModel = it.selectedModel.takeIf { m -> m in models } ?: models.firstOrNull() ?: ""
+                )
+            }
+        }
+    }
+
+    fun selectModel(name: String) {
+        _state.update { it.copy(selectedModel = name) }
+        viewModelScope.launch { advisor.configureLocal(_state.value.server.endpoint, name) }
     }
 
     fun importModel(uri: Uri) {

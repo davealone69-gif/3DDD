@@ -1,6 +1,8 @@
 package com.threedd.studio.ui.repair
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -176,6 +178,19 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
                 Text(state.manualCommand, style = MaterialTheme.typography.labelSmall, color = NeonCyan)
             }
 
+            if (state.availableModels.isNotEmpty()) {
+                SectionTitle("Model (live from /v1/models)")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(state.availableModels) { name ->
+                        com.threedd.studio.ui.components.PresetChip(
+                            label = name,
+                            selected = name == state.selectedModel,
+                            onClick = { viewModel.selectModel(name) }
+                        )
+                    }
+                }
+            }
+
             SectionTitle("Assistant")
             Text(
                 if (state.localModelReachable)
@@ -193,7 +208,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
                 Button(onClick = viewModel::ask, enabled = !state.advising) {
                     Text(if (state.advising) "Thinking…" else "Ask")
                 }
-                Text("provider: ${state.advisorProvider}", modifier = Modifier.align(Alignment.CenterVertically),
+                Text("model: ${state.selectedModel.ifBlank { "none" }} | provider: ${state.advisorProvider}", modifier = Modifier.align(Alignment.CenterVertically),
                     style = MaterialTheme.typography.labelSmall, color = TextSecondary)
             }
             state.advisorAnswer?.let {
