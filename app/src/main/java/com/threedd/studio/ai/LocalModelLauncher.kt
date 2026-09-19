@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -35,7 +36,11 @@ import javax.inject.Singleton
  * server yourself - it never pretends the model is running when it is not.
  */
 @Singleton
-class LocalModelLauncher @Inject constructor(@ApplicationContext private val context: Context) {
+class LocalModelLauncher @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val bridge: TermuxBridge,
+    private val machine: ServerStateMachine = ServerStateMachine()
+) {
 
     enum class Phase { NOT_STARTED, PROBING, RUNNING, STARTING, NO_BINARY, NO_MODEL, EXEC_BLOCKED, FAILED, STOPPED }
 
@@ -53,7 +58,6 @@ class LocalModelLauncher @Inject constructor(@ApplicationContext private val con
     private val _status = MutableStateFlow(Status())
     val status: StateFlow<Status> = _status.asStateFlow()
 
-    private var process: Process? = null
 
     private val modelsDir: File get() = File(context.filesDir, "models").apply { mkdirs() }
     private val binDir: File get() = File(context.filesDir, "bin").apply { mkdirs() }
@@ -66,96 +70,98 @@ class LocalModelLauncher @Inject constructor(@ApplicationContext private val con
     suspend fun probe(): Boolean = withContext(Dispatchers.IO) {
         _status.value = _status.value.copy(phase = Phase.PROBING, detail = "Checking ${_status.value.endpoint}")
         val alive = healthy(_status.value.endpoint)
-        _status.value = if (alive) {
-            _status.value.copy(phase = Phase.RUNNING, detail = "A local model server is already answering")
-        } else {
-            _status.value.copy(phase = Phase.NOT_STARTED, detail = "No server on ${_status.value.endpoint}")
-        }
+        if (alive) machine.onProbe(true, System.currentTimeMillis()) else machine.onDisappeared(System.currentTimeMillis())
+        publish()
         alive
     }
 
-    /** The autonomous path: find, launch, wait for health. */
+    /**
+     * The autonomous path. Termux is asked to start the server through its documented
+     * RUN_COMMAND interface, then health is polled until it answers.
+     *
+     * Delivery is not success: only a passing health check moves the state to ONLINE, and a
+     * refused request is reported with the specific fix instead of a generic failure.
+     */
     suspend fun start(): Status = withContext(Dispatchers.IO) {
-        if (healthy(_status.value.endpoint)) {
-            _status.value = _status.value.copy(phase = Phase.RUNNING, detail = "A local model server is already answering")
-            return@withContext _status.value
+        val now = System.currentTimeMillis()
+        val endpoint = _status.value.endpoint
+        val port = portOf(endpoint)
+
+        if (healthy(endpoint)) {
+            machine.onProbe(true, now, "A local model server is already answering")
+            return@withContext publish()
         }
 
-        val binary = findBinary()
-        if (binary == null) {
-            _status.value = _status.value.copy(
-                phase = Phase.NO_BINARY,
-                detail = "No llama-server binary found. Put one at ${binDir.absolutePath}/llama-server " +
-                    "or run it yourself (see the command below)."
-            )
-            return@withContext _status.value
-        }
-        val model = findModel()
-        if (model == null) {
-            _status.value = _status.value.copy(
-                phase = Phase.NO_MODEL,
-                binaryPath = binary.absolutePath,
-                detail = "Found ${binary.name} but no .gguf model. Import one to ${modelsDir.absolutePath}."
-            )
-            return@withContext _status.value
+        bridge.blocker()?.let { refused ->
+            machine.onStartRefused(now, refused.detail)
+            return@withContext publish(extra = refused.fix)
         }
 
-        _status.value = _status.value.copy(
-            phase = Phase.STARTING,
-            binaryPath = binary.absolutePath,
-            modelPath = model.absolutePath,
-            detail = "Launching ${binary.name} with ${model.name}"
-        )
+        machine.onStartRequested(now, "Asking Termux to start the server on port $port")
+        publish()
 
-        val failure: Result<Unit> = runCatching {
-            val builder = ProcessBuilder(
-                binary.absolutePath,
-                "-m", model.absolutePath,
-                "--host", "127.0.0.1",
-                "--port", portOf(_status.value.endpoint)
-            )
-            builder.redirectErrorStream(true)
-            builder.directory(context.filesDir)
-            process = builder.start()
+        val delivered = if (port == "11434") {
+            bridge.startOllama(port.toInt())
+        } else {
+            bridge.startLlamaServer(firstModelPath() ?: "~/models/model.gguf", port.toInt())
+        }
+        if (delivered is TermuxBridge.Result.Refused) {
+            machine.onStartRefused(now, delivered.detail)
+            return@withContext publish(extra = delivered.fix)
         }
 
-        failure.onFailure { error: Throwable ->
-            val blocked = error is SecurityException ||
-                (error.message?.contains("permission", true) == true) ||
-                (error.message?.contains("exec", true) == true)
-            _status.value = _status.value.copy(
-                phase = if (blocked) Phase.EXEC_BLOCKED else Phase.FAILED,
-                detail = if (blocked)
-                    "Android refused to execute a binary from app storage (the post-Android-10 W^X rule). " +
-                        "Run the server from Termux instead; the command is below."
-                else "Launch failed: ${error.message ?: error::class.java.simpleName}"
-            )
-        }
-
-        if (_status.value.phase != Phase.STARTING) return@withContext _status.value
-
-        // wait for health
         repeat(HEALTH_ATTEMPTS) {
             delay(HEALTH_INTERVAL_MS)
-            if (healthy(_status.value.endpoint)) {
-                _status.value = _status.value.copy(
-                    phase = Phase.RUNNING,
-                    detail = "Local model server running on ${_status.value.endpoint}"
-                )
-                return@withContext _status.value
-            }
+            val healthyNow = healthy(endpoint)
+            machine.onProbe(healthyNow, System.currentTimeMillis())
+            if (healthyNow) return@withContext publish()
         }
-        _status.value = _status.value.copy(
-            phase = Phase.FAILED,
-            detail = "The server started but never became healthy on ${_status.value.endpoint}."
-        )
-        _status.value
+        machine.onStartupTimedOut(System.currentTimeMillis())
+        publish()
+    }
+
+    /** The first .gguf we can find, for the llama-server script. */
+    private fun firstModelPath(): String? =
+        installedModels().firstOrNull()?.absolutePath
+
+    /** Projects the state machine onto the status the UI reads, so both stay consistent. */
+    private fun publish(extra: String? = null): Status {
+        val m = machine.current
+        val phase = when (m.state) {
+            ServerStateMachine.State.OFFLINE -> if (m.startingRequested) Phase.STARTING else Phase.NOT_STARTED
+            ServerStateMachine.State.STARTING -> Phase.STARTING
+            ServerStateMachine.State.ONLINE -> Phase.RUNNING
+            ServerStateMachine.State.UNREACHABLE -> Phase.EXEC_BLOCKED
+        }
+        val detail = buildString {
+            append(m.detail)
+            if (!extra.isNullOrBlank()) append(". ").append(extra)
+        }
+        _status.value = _status.value.copy(phase = phase, detail = detail)
+        return _status.value
+    }
+
+    /** Reads the live model list so the UI never shows hard-coded names. */
+    suspend fun fetchModels(): List<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val connection = (URL("${_status.value.endpoint}/v1/models").openConnection() as HttpURLConnection).apply {
+                connectTimeout = 2500
+                readTimeout = 5000
+                requestMethod = "GET"
+            }
+            if (connection.responseCode != 200) {
+                connection.disconnect()
+                return@runCatching emptyList()
+            }
+            val text = connection.inputStream.bufferedReader().use { it.readText() }
+            connection.disconnect()
+            val data = JSONObject(text).optJSONArray("data") ?: return@runCatching emptyList()
+            (0 until data.length()).mapNotNull { data.optJSONObject(it)?.optString("id")?.takeIf { id -> id.isNotBlank() } }
+        }.getOrDefault(emptyList())
     }
 
     fun stop(): Status {
-        runCatching { process?.destroy() }
-        process = null
-        _status.value = _status.value.copy(phase = Phase.STOPPED, detail = "Server stopped")
+        _status.value = _status.value.copy(phase = Phase.STOPPED, detail = "Stopped watching the server")
         return _status.value
     }
 
@@ -255,6 +261,7 @@ class LocalModelLauncher @Inject constructor(@ApplicationContext private val con
             ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
 
     companion object {
+        /** Ollama listens on 11434 (its default); llama-server is usually 8088. Either works. */
         const val DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
         private const val HEALTH_ATTEMPTS = 20
         private const val HEALTH_INTERVAL_MS = 900L

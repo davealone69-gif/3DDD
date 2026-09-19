@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Lets the app ask Termux to run a command, so a local model server can be started. -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -20,6 +22,11 @@
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-feature android:name="android.hardware.vulkan.level" android:required="false" />
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+
+    <!-- Android 11+ package visibility: without this, Termux is invisible to the app. -->
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
 
     <application
         android:name=".ThreeDoubleDApplication"
