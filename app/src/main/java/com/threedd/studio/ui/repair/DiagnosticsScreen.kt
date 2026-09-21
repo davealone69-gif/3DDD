@@ -134,7 +134,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 if (state.server.running) {
-                    Button(onClick = viewModel::stopServer) { Text("Stop server") }
+                    Button(onClick = viewModel::stopServer) { Text("Stop monitoring") }
                 } else {
                     Button(onClick = viewModel::startServer) { Text("Start server") }
                 }
@@ -152,7 +152,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
             OutlinedTextField(
                 value = state.endpointDraft,
                 onValueChange = viewModel::setEndpointDraft,
-                label = { Text("Server address (default 127.0.0.1:8088, or your PC: 192.168.1.50:8088)") },
+                label = { Text("Server address (default 127.0.0.1:11434, or another OpenAI-compatible server)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
@@ -170,8 +170,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
 
             if (!state.server.running) {
                 Text(
-                    "Termux cannot read the app's private storage, so the model must sit in Downloads. " +
-                        "In Termux: pkg install llama-cpp, then run:",
+                    "Automatic startup uses Termux RUN_COMMAND. Grant 3DDD the Run commands in Termux permission and enable allow-external-apps in Termux if startup is refused.",
                     style = MaterialTheme.typography.labelSmall, color = TextSecondary,
                     modifier = Modifier.padding(top = 8.dp)
                 )
@@ -194,7 +193,7 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
             SectionTitle("Assistant")
             Text(
                 if (state.localModelReachable)
-                    "Answering with the on-device model (llama.cpp on 127.0.0.1:8088)."
+                    "Answering with the on-device Ollama model on 127.0.0.1:11434."
                 else "No local model detected - answering with the built-in offline rules. Free either way.",
                 style = MaterialTheme.typography.labelSmall, color = TextSecondary
             )
