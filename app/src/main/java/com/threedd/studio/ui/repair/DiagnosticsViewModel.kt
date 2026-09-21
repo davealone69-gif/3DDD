@@ -72,7 +72,11 @@ class DiagnosticsViewModel @Inject constructor(
                 }
             }
         }
-        viewModelScope.launch { launcher.probe() }
+        viewModelScope.launch {
+            val status = launcher.start()
+            advisor.configureLocal(status.endpoint, _state.value.selectedModel)
+            if (status.running) refreshModels()
+        }
     }
 
     fun refresh() {
@@ -132,6 +136,7 @@ class DiagnosticsViewModel @Inject constructor(
     }
 
     fun stopServer() {
+        // This stops monitoring only. Termux owns the Ollama process.
         launcher.stop()
         _state.update { it.copy(localModelReachable = false) }
     }
