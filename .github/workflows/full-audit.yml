@@ -5,34 +5,66 @@ on:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+
 permissions:
   contents: read
   security-events: write
   actions: read
+
 jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
-      - uses: JetBrains/qodana-action@v2026.2
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+          accept-android-sdk-licenses: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript,python,java-kotlin
+
       - name: Gradle
         if: ${{ hashFiles('gradlew') != '' }}
+        shell: bash
         run: |
+          set -euo pipefail
           chmod +x gradlew
           ./gradlew lint test assembleDebug --continue --stacktrace --console=plain
+
       - name: Node
         if: ${{ hashFiles('package.json') != '' }}
+        shell: bash
         run: |
+          set -euo pipefail
           npm ci --ignore-scripts
           npm audit --audit-level=high || true
           npm run test --if-present
           npm run lint --if-present
           npm run build --if-present
+
       - name: Python
         if: ${{ hashFiles('**/*.py') != '' }}
+        shell: bash
         run: python -m compileall -q .
-      - uses: github/codeql-action/init@v3
-        with:
-          languages: javascript-typescript,python,java-kotlin
-      - uses: github/codeql-action/analyze@v3
+
+      - name: Analyze CodeQL
+        uses: github/codeql-action/analyze@v3
