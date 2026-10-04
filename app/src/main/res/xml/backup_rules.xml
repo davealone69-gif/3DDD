@@ -4,6 +4,6 @@
     <include domain="sharedpref" path="." />
     <include domain="file" path="models/" />
     <include domain="file" path="scans/" />
-    <exclude domain="file" path="exports/" />
-    <exclude domain="file" path="audio/" />
+    <include domain="file" path="exports/" />
+    <include domain="file" path="audio/" />
 </full-backup-content>
