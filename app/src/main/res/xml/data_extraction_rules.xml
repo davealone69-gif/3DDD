@@ -4,8 +4,8 @@
         <include domain="database" path="." />
         <include domain="sharedpref" path="." />
         <include domain="file" path="models/" />
-        <exclude domain="file" path="exports/" />
-        <exclude domain="file" path="audio/" />
+        <include domain="file" path="exports/" />
+        <include domain="file" path="audio/" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="." />
