@@ -189,19 +189,36 @@ class LocalModelLauncher @Inject constructor(
      * is private to its UID, so Termux cannot open a model stored there. Downloads is shared.
      */
     fun exportModelToDownloads(file: File): String? = runCatching {
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, file.name)
-            put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // MediaStore.Downloads was introduced in Android 10 (API 29).
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, file.name)
+                put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
                 put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/3DoubleD")
             }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: return@runCatching null
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                file.inputStream().use { input -> input.copyTo(output) }
+            } ?: return@runCatching null
+            "/sdcard/Download/3DoubleD/${file.name}"
+        } else {
+            // Legacy public Downloads needs the runtime WRITE_EXTERNAL_STORAGE grant.
+            if (context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) return@runCatching null
+            @Suppress("DEPRECATION")
+            val downloadsDir = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "3DoubleD"
+            )
+            if (!downloadsDir.exists() && !downloadsDir.mkdirs()) return@runCatching null
+            val target = File(downloadsDir, file.name)
+            file.inputStream().use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            }
+            target.absolutePath
         }
-        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            ?: return@runCatching null
-        context.contentResolver.openOutputStream(uri)?.use { output ->
-            file.inputStream().use { input -> input.copyTo(output) }
-        } ?: return@runCatching null
-        "/sdcard/Download/3DoubleD/${file.name}"
     }.getOrNull()
 
     /**
