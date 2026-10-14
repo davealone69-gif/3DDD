@@ -72,10 +72,14 @@ class DiagnosticsViewModel @Inject constructor(
                 }
             }
         }
+        // The deterministic rule advisor works offline. Merely opening Diagnostics must
+        // not start a heavyweight model server in the background; probe first and leave
+        // startup to the explicit Start server button.
         viewModelScope.launch {
-            val status = launcher.start()
+            val reachable = launcher.probe()
+            val status = launcher.status.value
             advisor.configureLocal(status.endpoint, _state.value.selectedModel)
-            if (status.running) refreshModels()
+            if (reachable) refreshModels()
         }
     }
 
