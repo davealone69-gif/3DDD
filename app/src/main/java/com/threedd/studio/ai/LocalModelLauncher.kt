@@ -189,19 +189,28 @@ class LocalModelLauncher @Inject constructor(
      * is private to its UID, so Termux cannot open a model stored there. Downloads is shared.
      */
     fun exportModelToDownloads(file: File): String? = runCatching {
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, file.name)
-            put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/3DoubleD")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // MediaStore.Downloads and RELATIVE_PATH exist from Android 10 onward.
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/3DoubleD")
             }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: return@runCatching null
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                file.inputStream().use { input -> input.copyTo(output) }
+            } ?: return@runCatching null
+            "/sdcard/Download/3DoubleD/${file.name}"
+        } else {
+            // Android 8/9 use the legacy shared Downloads path and declared
+            // WRITE_EXTERNAL_STORAGE permission (maxSdkVersion 28).
+            val folder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "3DoubleD")
+            if (!folder.exists() && !folder.mkdirs()) return@runCatching null
+            val target = File(folder, file.name)
+            file.copyTo(target, overwrite = true)
+            target.absolutePath
         }
-        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            ?: return@runCatching null
-        context.contentResolver.openOutputStream(uri)?.use { output ->
-            file.inputStream().use { input -> input.copyTo(output) }
-        } ?: return@runCatching null
-        "/sdcard/Download/3DoubleD/${file.name}"
     }.getOrNull()
 
     /**
