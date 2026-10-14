@@ -27,6 +27,8 @@ data class DiagnosticsUiState(
     val advisorProvider: String = "rules",
     val advising: Boolean = false,
     val localModelReachable: Boolean = false,
+    val localChatVerified: Boolean = false,
+    val localChatMessage: String? = null,
     val server: LocalModelLauncher.Status = LocalModelLauncher.Status(),
     val installedModels: List<String> = emptyList(),
     val manualCommand: String = "",
@@ -106,7 +108,14 @@ class DiagnosticsViewModel @Inject constructor(
                     advising = false,
                     advisorAnswer = answer ?: "No answer available.",
                     advisorProvider = advisor.lastProvider,
-                    localModelReachable = advisor.localAvailable()
+                    localModelReachable = advisor.localAvailable(),
+                    localChatVerified = advisor.lastProvider == "local-llama",
+                    localChatMessage = if (advisor.lastProvider == "local-llama")
+                        "A real local chat completion returned non-empty text."
+                    else if (advisor.localAvailable())
+                        "The server responds, but chat completion failed; this answer came from the offline rules."
+                    else
+                        "No local model server response; this answer came from the offline rules."
                 )
             }
         }
@@ -152,6 +161,9 @@ class DiagnosticsViewModel @Inject constructor(
         val value = _state.value.endpointDraft.trim()
         if (value.isBlank()) return
         launcher.setEndpoint(if (value.startsWith("http")) value else "http://$value")
+        _state.update {
+            it.copy(localChatVerified = false, localChatMessage = "Endpoint changed; test a real chat prompt again.")
+        }
         viewModelScope.launch {
             val status = launcher.start()
             advisor.configureLocal(status.endpoint, _state.value.selectedModel)
