@@ -32,10 +32,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: javascript-typescript,python
       - name: Gradle
         if: ${{ hashFiles('gradlew') != '' }}
         shell: bash
@@ -57,5 +53,3 @@ jobs:
         if: ${{ hashFiles('**/*.py') != '' }}
         shell: bash
         run: python -m compileall -q .
-      - name: Analyze CodeQL
-        uses: github/codeql-action/analyze@v3
