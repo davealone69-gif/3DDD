@@ -143,7 +143,15 @@ class DiagnosticsViewModel @Inject constructor(
         viewModelScope.launch {
             val status = launcher.start()
             advisor.configureLocal(status.endpoint, _state.value.selectedModel)
-            _state.update { it.copy(localModelReachable = status.running) }
+            _state.update {
+                it.copy(
+                    localModelReachable = status.running,
+                    localChatVerified = false,
+                    localChatMessage = if (status.running)
+                        "API responds; chat completion is unverified until Ask returns a real model response."
+                    else "Server startup failed; the offline rules remain available."
+                )
+            }
             if (status.running) refreshModels()
         }
     }
@@ -151,7 +159,13 @@ class DiagnosticsViewModel @Inject constructor(
     fun stopServer() {
         // This stops monitoring only. Termux owns the Ollama process.
         launcher.stop()
-        _state.update { it.copy(localModelReachable = false) }
+        _state.update {
+            it.copy(
+                localModelReachable = false,
+                localChatVerified = false,
+                localChatMessage = "Server monitoring stopped; no chat completion is verified."
+            )
+        }
     }
 
     fun setEndpointDraft(value: String) = _state.update { it.copy(endpointDraft = value) }
@@ -193,7 +207,13 @@ class DiagnosticsViewModel @Inject constructor(
     }
 
     fun selectModel(name: String) {
-        _state.update { it.copy(selectedModel = name) }
+        _state.update {
+            it.copy(
+                selectedModel = name,
+                localChatVerified = false,
+                localChatMessage = "Model changed; test a real chat prompt again."
+            )
+        }
         viewModelScope.launch { advisor.configureLocal(_state.value.server.endpoint, name) }
     }
 
