@@ -73,8 +73,8 @@ class LocalRuleAdvisor @Inject constructor() : AiAdvisor {
 }
 
 /**
- * Free, on-device model access over an OpenAI-compatible loopback endpoint
- * (llama.cpp server), matching the provider used by the existing Aura projects.
+ * Free, on-device model access over an OpenAI-compatible endpoint. Ollama is the default;
+ * a custom endpoint is optional.
  */
 class LocalLlamaAdvisor @Inject constructor(@ApplicationContext private val context: Context) : AiAdvisor {
 
