@@ -189,19 +189,28 @@ class LocalModelLauncher @Inject constructor(
      * is private to its UID, so Termux cannot open a model stored there. Downloads is shared.
      */
     fun exportModelToDownloads(file: File): String? = runCatching {
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, file.name)
-            put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/3DoubleD")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // MediaStore.Downloads and RELATIVE_PATH exist from Android 10 onward.
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/3DoubleD")
             }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: return@runCatching null
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                file.inputStream().use { input -> input.copyTo(output) }
+            } ?: return@runCatching null
+            "/sdcard/Download/3DoubleD/${file.name}"
+        } else {
+            // Android 8/9 use the legacy shared Downloads path and declared
+            // WRITE_EXTERNAL_STORAGE permission (maxSdkVersion 28).
+            val folder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "3DoubleD")
+            if (!folder.exists() && !folder.mkdirs()) return@runCatching null
+            val target = File(folder, file.name)
+            file.copyTo(target, overwrite = true)
+            target.absolutePath
         }
-        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            ?: return@runCatching null
-        context.contentResolver.openOutputStream(uri)?.use { output ->
-            file.inputStream().use { input -> input.copyTo(output) }
-        } ?: return@runCatching null
-        "/sdcard/Download/3DoubleD/${file.name}"
     }.getOrNull()
 
     /**
@@ -209,13 +218,15 @@ class LocalModelLauncher @Inject constructor(
      * [sharedPath] must point at the copy in Downloads, not at app-private storage.
      */
     fun manualCommand(sharedPath: String? = null): String {
+        val port = portOf(_status.value.endpoint)
+        // The phone's default is Ollama in Termux. Do not tell users to start a
+        // separate llama.cpp server on the same port.
+        if (port == "11434") return "ollama serve"
         val model = sharedPath
             ?: _status.value.modelPath?.takeIf { it.startsWith("/sdcard") || it.startsWith("/storage") }
             ?: "/sdcard/Download/3DoubleD/your-model.gguf"
-        val port = portOf(_status.value.endpoint)
-        // -ngl 0: no GPU layers, phones have no usable backend.
-        // -ngld -1: leave the speculative draft model unset; a fresh llama.cpp build asserts
-        //   "n_gpu_layers_draft < 0" during argument parsing if this is left at its default.
+        // -ngl 0 avoids unavailable mobile GPU backends; -ngld -1 avoids
+        // the llama.cpp draft-layer assertion on builds that support this flag.
         return "llama-server -m $model --host 127.0.0.1 --port $port -c 2048 -ngl 0 -ngld -1"
     }
 

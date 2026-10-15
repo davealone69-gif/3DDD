@@ -27,6 +27,8 @@ data class DiagnosticsUiState(
     val advisorProvider: String = "rules",
     val advising: Boolean = false,
     val localModelReachable: Boolean = false,
+    val localChatVerified: Boolean = false,
+    val localChatMessage: String? = null,
     val server: LocalModelLauncher.Status = LocalModelLauncher.Status(),
     val installedModels: List<String> = emptyList(),
     val manualCommand: String = "",
@@ -72,10 +74,14 @@ class DiagnosticsViewModel @Inject constructor(
                 }
             }
         }
+        // The deterministic rule advisor works offline. Merely opening Diagnostics must
+        // not start a heavyweight model server in the background; probe first and leave
+        // startup to the explicit Start server button.
         viewModelScope.launch {
-            val status = launcher.start()
+            val reachable = launcher.probe()
+            val status = launcher.status.value
             advisor.configureLocal(status.endpoint, _state.value.selectedModel)
-            if (status.running) refreshModels()
+            if (reachable) refreshModels()
         }
     }
 
@@ -102,7 +108,14 @@ class DiagnosticsViewModel @Inject constructor(
                     advising = false,
                     advisorAnswer = answer ?: "No answer available.",
                     advisorProvider = advisor.lastProvider,
-                    localModelReachable = advisor.localAvailable()
+                    localModelReachable = advisor.localAvailable(),
+                    localChatVerified = advisor.lastProvider == "local-llama",
+                    localChatMessage = if (advisor.lastProvider == "local-llama")
+                        "A real local chat completion returned non-empty text."
+                    else if (advisor.localAvailable())
+                        "The server responds, but chat completion failed; this answer came from the offline rules."
+                    else
+                        "No local model server response; this answer came from the offline rules."
                 )
             }
         }
@@ -130,7 +143,15 @@ class DiagnosticsViewModel @Inject constructor(
         viewModelScope.launch {
             val status = launcher.start()
             advisor.configureLocal(status.endpoint, _state.value.selectedModel)
-            _state.update { it.copy(localModelReachable = status.running) }
+            _state.update {
+                it.copy(
+                    localModelReachable = status.running,
+                    localChatVerified = false,
+                    localChatMessage = if (status.running)
+                        "API responds; chat completion is unverified until Ask returns a real model response."
+                    else "Server startup failed; the offline rules remain available."
+                )
+            }
             if (status.running) refreshModels()
         }
     }
@@ -138,7 +159,13 @@ class DiagnosticsViewModel @Inject constructor(
     fun stopServer() {
         // This stops monitoring only. Termux owns the Ollama process.
         launcher.stop()
-        _state.update { it.copy(localModelReachable = false) }
+        _state.update {
+            it.copy(
+                localModelReachable = false,
+                localChatVerified = false,
+                localChatMessage = "Server monitoring stopped; no chat completion is verified."
+            )
+        }
     }
 
     fun setEndpointDraft(value: String) = _state.update { it.copy(endpointDraft = value) }
@@ -148,6 +175,9 @@ class DiagnosticsViewModel @Inject constructor(
         val value = _state.value.endpointDraft.trim()
         if (value.isBlank()) return
         launcher.setEndpoint(if (value.startsWith("http")) value else "http://$value")
+        _state.update {
+            it.copy(localChatVerified = false, localChatMessage = "Endpoint changed; test a real chat prompt again.")
+        }
         viewModelScope.launch {
             val status = launcher.start()
             advisor.configureLocal(status.endpoint, _state.value.selectedModel)
@@ -177,7 +207,13 @@ class DiagnosticsViewModel @Inject constructor(
     }
 
     fun selectModel(name: String) {
-        _state.update { it.copy(selectedModel = name) }
+        _state.update {
+            it.copy(
+                selectedModel = name,
+                localChatVerified = false,
+                localChatMessage = "Model changed; test a real chat prompt again."
+            )
+        }
         viewModelScope.launch { advisor.configureLocal(_state.value.server.endpoint, name) }
     }
 
