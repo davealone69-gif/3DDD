@@ -138,6 +138,7 @@ fun ExportScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 factory = { viewContext ->
                                     VideoView(viewContext).apply {
+                                        tag = file.absolutePath
                                         setVideoURI(Uri.fromFile(file))
                                         setMediaController(MediaController(viewContext).also { it.setAnchorView(this) })
                                         setOnPreparedListener { player -> player.isLooping = true }
