@@ -1,5 +1,9 @@
 package com.threedd.studio.ui.export
 
+import android.net.Uri
+import android.widget.MediaController
+import android.widget.VideoView
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -124,6 +128,31 @@ fun ExportScreen(
                         Text(file.absolutePath, style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary)
                         Text("${file.length() / 1024} KiB", style = MaterialTheme.typography.labelSmall)
+                        if (file.extension.equals("mp4", ignoreCase = true)) {
+                            Text(
+                                "Verified MP4 preview",
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(top = 12.dp, bottom = 6.dp)
+                            )
+                            AndroidView(
+                                modifier = Modifier.fillMaxWidth(),
+                                factory = { viewContext ->
+                                    VideoView(viewContext).apply {
+                                        tag = file.absolutePath
+                                        setVideoURI(Uri.fromFile(file))
+                                        setMediaController(MediaController(viewContext).also { it.setAnchorView(this) })
+                                        setOnPreparedListener { player -> player.isLooping = true }
+                                    }
+                                },
+                                update = { videoView ->
+                                    if (videoView.tag != file.absolutePath) {
+                                        videoView.tag = file.absolutePath
+                                        videoView.setVideoURI(Uri.fromFile(file))
+                                        videoView.setOnPreparedListener { player -> player.isLooping = true }
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }

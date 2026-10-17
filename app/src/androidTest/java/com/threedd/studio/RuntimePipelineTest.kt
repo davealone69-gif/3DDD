@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.media.MediaPlayer
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.threedd.studio.data.model.AvatarModel
@@ -196,6 +197,64 @@ class RuntimePipelineTest {
         val glb = runBlockingExport { exports.exportGlb(model, mapOf("widen" to 1f), "test-baked") }
         assertNotNull("glb export failed", glb)
         assertTrue("glb is empty", glb!!.length() > 1024)
+    }
+
+    @Test
+    fun exportsMp4FinalizesValidatesGalleryCopyAndExercisesPlayback() {
+        requireGpu()
+        assertTrue("fixture failed to load", renderer.load(fixtureModel()))
+
+        val mp4 = runBlockingExport {
+            exports.exportMp4(
+                renderer = renderer,
+                width = 320,
+                height = 320,
+                fps = 12,
+                seconds = 3,
+                name = "test-turntable-mp4"
+            )
+        }
+        assertNotNull("MP4 export returned no file", mp4)
+        mp4!!
+        assertTrue("MP4 is too small to contain encoded frames", mp4.length() > 1024L)
+
+        val validation = exports.validateMp4(mp4)
+        assertTrue("invalid video duration: ${validation.durationMs}ms", validation.durationMs >= 2000L)
+        assertEquals(320, validation.width)
+        assertEquals(320, validation.height)
+        assertTrue("MP4 contains no readable video samples", validation.videoSamples > 0)
+
+        // Exercise Android's actual playback stack against the finalized file, not only its header.
+        val player = MediaPlayer()
+        try {
+            player.setDataSource(mp4.absolutePath)
+            player.prepare()
+            assertTrue("MediaPlayer reported no duration", player.duration >= 2000)
+            player.start()
+            val deadline = android.os.SystemClock.elapsedRealtime() + 2500L
+            while (player.currentPosition <= 0 && android.os.SystemClock.elapsedRealtime() < deadline) {
+                Thread.sleep(50)
+            }
+            assertTrue("MP4 playback never advanced beyond frame zero", player.currentPosition > 0)
+        } finally {
+            runCatching { player.stop() }
+            player.release()
+        }
+
+        // exportMp4 also reads back the MediaStore gallery copy, compares SHA-256 and validates it
+        // before returning. The successful return above proves that gallery verification passed.
+    }
+
+    @Test
+    fun rejectsTruncatedMp4DuringValidation() {
+        val broken = File(targetContext.cacheDir, "truncated-export.mp4")
+        try {
+            broken.writeBytes(ByteArray(128) { 0 })
+            val error = runCatching { exports.validateMp4(broken) }.exceptionOrNull()
+            assertNotNull("truncated MP4 was accepted", error)
+        } finally {
+            broken.delete()
+        }
     }
 
     @Test
