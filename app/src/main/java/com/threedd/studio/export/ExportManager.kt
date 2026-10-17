@@ -129,7 +129,7 @@ class ExportManager(private val context: Context) {
                     }
                     activeCodec.releaseOutputBuffer(index, false)
                     if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputEos = true
-                    index = codec.dequeueOutputBuffer(bufferInfo, 0)
+                    index = activeCodec.dequeueOutputBuffer(bufferInfo, 0)
                 }
                 if (outputEos) throw IllegalStateException("Encoder ended before all requested frames were submitted")
             }
@@ -141,28 +141,28 @@ class ExportManager(private val context: Context) {
                 if (android.os.SystemClock.elapsedRealtime() > drainDeadline) {
                     throw IllegalStateException("Timed out waiting for encoder end-of-stream")
                 }
-                val index = codec.dequeueOutputBuffer(bufferInfo, 10_000)
+                val index = activeCodec.dequeueOutputBuffer(bufferInfo, 10_000)
                 when {
                     index == MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
                     index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         if (!muxerStarted) {
-                            trackIndex = muxer.addTrack(codec.outputFormat)
-                            muxer.start()
+                            trackIndex = activeMuxer.addTrack(activeCodec.outputFormat)
+                            activeMuxer.start()
                             muxerStarted = true
                         }
                     }
                     index >= 0 -> {
-                        val output = codec.getOutputBuffer(index)
+                        val output = activeCodec.getOutputBuffer(index)
                             ?: throw IllegalStateException("Encoder returned a null output buffer while draining")
                         if (bufferInfo.size > 0 && muxerStarted &&
                             bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0
                         ) {
                             output.position(bufferInfo.offset)
                             output.limit(bufferInfo.offset + bufferInfo.size)
-                            muxer.writeSampleData(trackIndex, output, bufferInfo)
+                            activeMuxer.writeSampleData(trackIndex, output, bufferInfo)
                         }
                         val eos = bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-                        codec.releaseOutputBuffer(index, false)
+                        activeCodec.releaseOutputBuffer(index, false)
                         if (eos) draining = false
                     }
                 }
