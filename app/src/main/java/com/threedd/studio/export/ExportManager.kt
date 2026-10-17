@@ -83,7 +83,8 @@ class ExportManager(private val context: Context) {
         val savedAzimuth = renderer.orbit.azimuth
         try {
             val frameCount = Math.multiplyExact(fps, seconds)
-            muxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            val activeMuxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer = activeMuxer
             val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
                 setInteger(MediaFormat.KEY_BIT_RATE, bitrateFor(width, height))
@@ -91,11 +92,13 @@ class ExportManager(private val context: Context) {
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
                 setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
             }
-            codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-            codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            val surface = codec.createInputSurface()
-            codec.start()
-            swapChain = renderer.createEncoderSwapChain(surface)
+            val activeCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            codec = activeCodec
+            activeCodec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            val surface = activeCodec.createInputSurface()
+            activeCodec.start()
+            val activeSwapChain = renderer.createEncoderSwapChain(surface)
+            swapChain = activeSwapChain
 
             val bufferInfo = MediaCodec.BufferInfo()
             var trackIndex = -1
@@ -104,31 +107,31 @@ class ExportManager(private val context: Context) {
 
             for (frame in 0 until frameCount) {
                 renderer.orbit.azimuth = (savedAzimuth + (2.0 * PI * frame / frameCount)).toFloat()
-                renderer.renderEncoderFrame(swapChain, frame * frameDurationNs)
+                renderer.renderEncoderFrame(activeSwapChain, frame * frameDurationNs)
                 onProgress(frame.toFloat() / frameCount)
 
-                var index = codec.dequeueOutputBuffer(bufferInfo, 10_000)
+                var index = activeCodec.dequeueOutputBuffer(bufferInfo, 10_000)
                 while (index >= 0) {
-                    val output = codec.getOutputBuffer(index)
+                    val output = activeCodec.getOutputBuffer(index)
                         ?: throw IllegalStateException("Encoder returned a null output buffer")
                     if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0 && bufferInfo.size > 0) {
                         if (!muxerStarted) {
-                            trackIndex = muxer.addTrack(codec.outputFormat)
-                            muxer.start()
+                            trackIndex = activeMuxer.addTrack(activeCodec.outputFormat)
+                            activeMuxer.start()
                             muxerStarted = true
                         }
                         output.position(bufferInfo.offset)
                         output.limit(bufferInfo.offset + bufferInfo.size)
-                        muxer.writeSampleData(trackIndex, output, bufferInfo)
+                        activeMuxer.writeSampleData(trackIndex, output, bufferInfo)
                     }
-                    codec.releaseOutputBuffer(index, false)
+                    activeCodec.releaseOutputBuffer(index, false)
                     if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputEos = true
                     index = codec.dequeueOutputBuffer(bufferInfo, 0)
                 }
                 if (outputEos) throw IllegalStateException("Encoder ended before all requested frames were submitted")
             }
 
-            codec.signalEndOfInputStream()
+            activeCodec.signalEndOfInputStream()
             var draining = true
             var drainDeadline = android.os.SystemClock.elapsedRealtime() + 30_000L
             while (draining) {
@@ -164,8 +167,8 @@ class ExportManager(private val context: Context) {
 
             if (!muxerStarted) throw IllegalStateException("Encoder produced no muxable video track")
             // Finalization errors must escape. A partial MP4 is never reported as an export.
-            codec.stop()
-            muxer.stop()
+            activeCodec.stop()
+            activeMuxer.stop()
             finalized = true
             onProgress(0.98f)
 
