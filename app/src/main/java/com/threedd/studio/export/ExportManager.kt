@@ -12,6 +12,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.view.Surface
 import android.provider.MediaStore
 import com.threedd.studio.data.model.AvatarModel
 import com.threedd.studio.render.OffscreenCapture
@@ -78,6 +79,7 @@ class ExportManager(private val context: Context) {
         var muxer: MediaMuxer? = null
         var codec: MediaCodec? = null
         var swapChain: com.google.android.filament.SwapChain? = null
+        var encoderSurface: Surface? = null
         var muxerStarted = false
         var finalized = false
         val savedAzimuth = renderer.orbit.azimuth
@@ -96,6 +98,7 @@ class ExportManager(private val context: Context) {
             codec = activeCodec
             activeCodec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             val surface = activeCodec.createInputSurface()
+            encoderSurface = surface
             activeCodec.start()
             val activeSwapChain = renderer.createEncoderSwapChain(surface)
             swapChain = activeSwapChain
@@ -182,6 +185,7 @@ class ExportManager(private val context: Context) {
         } finally {
             renderer.orbit.azimuth = savedAzimuth
             swapChain?.let { runCatching { renderer.destroyEncoderSwapChain(it) } }
+            encoderSurface?.let { runCatching { it.release() } }
             codec?.let {
                 if (!finalized) runCatching { it.stop() }
                 runCatching { it.release() }
