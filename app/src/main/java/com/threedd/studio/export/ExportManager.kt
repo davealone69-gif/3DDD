@@ -327,6 +327,19 @@ class ExportManager(private val context: Context) {
         context.contentResolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } }
     }
 
+    private fun sha256File(file: File): ByteArray {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest()
+    }
+
     private fun publishVideo(file: File, name: String) {
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, "$name.mp4")
@@ -351,8 +364,8 @@ class ExportManager(private val context: Context) {
                 if (galleryCopy.length() != file.length()) {
                     throw IllegalStateException("Gallery MP4 size differs from the validated export")
                 }
-                val sourceDigest = java.security.MessageDigest.getInstance("SHA-256").digest(file.readBytes())
-                val galleryDigest = java.security.MessageDigest.getInstance("SHA-256").digest(galleryCopy.readBytes())
+                val sourceDigest = sha256File(file)
+                val galleryDigest = sha256File(galleryCopy)
                 if (!sourceDigest.contentEquals(galleryDigest)) {
                     throw IllegalStateException("Gallery MP4 bytes do not match the validated export")
                 }
