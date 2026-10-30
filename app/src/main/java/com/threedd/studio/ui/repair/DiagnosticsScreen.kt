@@ -125,9 +125,21 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
             }
 
             SectionTitle("Local model server")
-            Text("Status: ${state.server.phase} — ${state.server.detail}",
+            Text("Server status: ${state.server.phase} — ${state.server.detail}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (state.server.running) NeonCyan else TextSecondary)
+            Text(
+                when {
+                    state.localChatVerified -> "CHAT VERIFIED: a real model response was returned by the selected local model."
+                    state.server.running -> "API RESPONDS, but chat completion is NOT verified yet. Press Ask to test a real prompt."
+                    else -> "Local model API is unavailable; the built-in offline rules can still answer diagnostics questions."
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (state.localChatVerified) NeonCyan else TextSecondary
+            )
+            state.localChatMessage?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            }
             state.server.pid?.let { Text("pid $it", style = MaterialTheme.typography.labelSmall, color = TextSecondary) }
             state.server.modelPath?.let {
                 Text("model: ${it.substringAfterLast('/')}", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
