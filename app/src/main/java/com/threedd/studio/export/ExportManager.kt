@@ -7,8 +7,12 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.media.MediaExtractor
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.view.Surface
 import android.provider.MediaStore
 import com.threedd.studio.data.model.AvatarModel
 import com.threedd.studio.render.OffscreenCapture
@@ -54,7 +58,7 @@ class ExportManager(private val context: Context) {
         if (GlbMorphWriter.bake(source, weights, destination)) destination else null
     }
 
-    /** Renders a 360-degree turntable straight into an H.264 encoder surface. */
+    /** Renders, finalizes, validates, and verifies a gallery copy of an H.264 MP4. */
     suspend fun exportMp4(
         renderer: StudioRenderer,
         width: Int = 1080,
@@ -64,100 +68,200 @@ class ExportManager(private val context: Context) {
         onProgress: (Float) -> Unit = {},
         name: String = "3doubled-${System.currentTimeMillis()}"
     ): File? = withContext(Dispatchers.Default) {
-        val file = File(exportsDir(), "$name.mp4")
-        val frameCount = fps * seconds
-        val muxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
-            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            setInteger(MediaFormat.KEY_BIT_RATE, bitrateFor(width, height))
-            setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-            setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+        require(width >= 16 && height >= 16 && width % 2 == 0 && height % 2 == 0) {
+            "MP4 dimensions must be even and at least 16 pixels"
         }
-        val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-        codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        val surface = codec.createInputSurface()
-        codec.start()
+        require(fps in 1..60) { "MP4 frame rate must be between 1 and 60 FPS" }
+        require(seconds in 1..120) { "MP4 duration must be between 1 and 120 seconds" }
 
-        val swapChain = renderer.createEncoderSwapChain(surface)
-        val bufferInfo = MediaCodec.BufferInfo()
-        var trackIndex = -1
+        val file = File(exportsDir(), "$name.mp4")
+        file.delete()
+        var muxer: MediaMuxer? = null
+        var codec: MediaCodec? = null
+        var swapChain: com.google.android.filament.SwapChain? = null
+        var encoderSurface: Surface? = null
         var muxerStarted = false
-        val frameDurationNs = 1_000_000_000L / fps
+        var finalized = false
         val savedAzimuth = renderer.orbit.azimuth
-
         try {
+            val frameCount = Math.multiplyExact(fps, seconds)
+            val activeMuxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer = activeMuxer
+            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
+                setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                setInteger(MediaFormat.KEY_BIT_RATE, bitrateFor(width, height))
+                setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+                setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+            }
+            val activeCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            codec = activeCodec
+            activeCodec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            val surface = activeCodec.createInputSurface()
+            encoderSurface = surface
+            activeCodec.start()
+            val activeSwapChain = renderer.createEncoderSwapChain(surface)
+            swapChain = activeSwapChain
+
+            val bufferInfo = MediaCodec.BufferInfo()
+            var trackIndex = -1
+            val frameDurationNs = 1_000_000_000L / fps
+            var outputEos = false
+
             for (frame in 0 until frameCount) {
                 renderer.orbit.azimuth = (savedAzimuth + (2.0 * PI * frame / frameCount)).toFloat()
-                renderer.renderEncoderFrame(swapChain, frame * frameDurationNs)
+                renderer.renderEncoderFrame(activeSwapChain, frame * frameDurationNs)
                 onProgress(frame.toFloat() / frameCount)
 
-                var index = codec.dequeueOutputBuffer(bufferInfo, 0)
+                var index = activeCodec.dequeueOutputBuffer(bufferInfo, 10_000)
                 while (index >= 0) {
-                    val output = codec.getOutputBuffer(index) ?: break
-                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
-                        bufferInfo.size = 0
-                    }
-                    if (bufferInfo.size > 0) {
+                    val output = activeCodec.getOutputBuffer(index)
+                        ?: throw IllegalStateException("Encoder returned a null output buffer")
+                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0 && bufferInfo.size > 0) {
                         if (!muxerStarted) {
-                            trackIndex = muxer.addTrack(codec.outputFormat)
-                            muxer.start()
+                            trackIndex = activeMuxer.addTrack(activeCodec.outputFormat)
+                            activeMuxer.start()
                             muxerStarted = true
                         }
                         output.position(bufferInfo.offset)
                         output.limit(bufferInfo.offset + bufferInfo.size)
-                        muxer.writeSampleData(trackIndex, output, bufferInfo)
+                        activeMuxer.writeSampleData(trackIndex, output, bufferInfo)
                     }
-                    codec.releaseOutputBuffer(index, false)
-                    index = codec.dequeueOutputBuffer(bufferInfo, 0)
+                    activeCodec.releaseOutputBuffer(index, false)
+                    if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputEos = true
+                    index = activeCodec.dequeueOutputBuffer(bufferInfo, 0)
                 }
+                if (outputEos) throw IllegalStateException("Encoder ended before all requested frames were submitted")
             }
 
-            codec.signalEndOfInputStream()
+            activeCodec.signalEndOfInputStream()
             var draining = true
+            var drainDeadline = android.os.SystemClock.elapsedRealtime() + 30_000L
             while (draining) {
-                val index = codec.dequeueOutputBuffer(bufferInfo, 10_000)
+                if (android.os.SystemClock.elapsedRealtime() > drainDeadline) {
+                    throw IllegalStateException("Timed out waiting for encoder end-of-stream")
+                }
+                val index = activeCodec.dequeueOutputBuffer(bufferInfo, 10_000)
                 when {
                     index == MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
                     index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         if (!muxerStarted) {
-                            trackIndex = muxer.addTrack(codec.outputFormat)
-                            muxer.start()
+                            trackIndex = activeMuxer.addTrack(activeCodec.outputFormat)
+                            activeMuxer.start()
                             muxerStarted = true
                         }
                     }
                     index >= 0 -> {
-                        val output = codec.getOutputBuffer(index)
-                        if (output != null && bufferInfo.size > 0 && muxerStarted) {
+                        val output = activeCodec.getOutputBuffer(index)
+                            ?: throw IllegalStateException("Encoder returned a null output buffer while draining")
+                        if (bufferInfo.size > 0 && muxerStarted &&
+                            bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0
+                        ) {
                             output.position(bufferInfo.offset)
                             output.limit(bufferInfo.offset + bufferInfo.size)
-                            if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
-                                muxer.writeSampleData(trackIndex, output, bufferInfo)
-                            }
+                            activeMuxer.writeSampleData(trackIndex, output, bufferInfo)
                         }
-                        codec.releaseOutputBuffer(index, false)
-                        if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) draining = false
+                        val eos = bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                        activeCodec.releaseOutputBuffer(index, false)
+                        if (eos) draining = false
                     }
                 }
             }
+
+            if (!muxerStarted) throw IllegalStateException("Encoder produced no muxable video track")
+            // Finalization errors must escape. A partial MP4 is never reported as an export.
+            activeCodec.stop()
+            activeMuxer.stop()
+            finalized = true
+            onProgress(0.98f)
+
+            validateMp4(file)
+            publishVideo(file, name)
+            onProgress(1f)
+            file
+        } catch (failure: Throwable) {
+            file.delete()
+            throw failure
         } finally {
             renderer.orbit.azimuth = savedAzimuth
-            renderer.destroyEncoderSwapChain(swapChain)
-            runCatching { codec.stop() }
-            codec.release()
-            runCatching { if (muxerStarted) muxer.stop() }
-            runCatching { muxer.release() }
-        }
-
-        onProgress(1f)
-        if (!muxerStarted) {
-            file.delete()
-            null
-        } else {
-            publishVideo(file, name)
-            file
+            swapChain?.let { runCatching { renderer.destroyEncoderSwapChain(it) } }
+            encoderSurface?.let { runCatching { it.release() } }
+            codec?.let {
+                if (!finalized) runCatching { it.stop() }
+                runCatching { it.release() }
+            }
+            muxer?.let {
+                if (muxerStarted && !finalized) runCatching { it.stop() }
+                runCatching { it.release() }
+            }
+            // A failed export must not leave a partial file that looks successful.
+            if (!finalized) file.delete()
         }
     }
+
+    /** Validate the completed container and require a real, readable video track. */
+    internal fun validateMp4(file: File): Mp4Validation {
+        if (!file.isFile || file.length() < 1024L) {
+            throw IllegalStateException("MP4 output is missing or too small to be a real video")
+        }
+        val extractor = MediaExtractor()
+        val retriever = MediaMetadataRetriever()
+        try {
+            extractor.setDataSource(file.absolutePath)
+            var videoTrack = -1
+            var width = 0
+            var height = 0
+            for (index in 0 until extractor.trackCount) {
+                val track = extractor.getTrackFormat(index)
+                if (track.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true) {
+                    videoTrack = index
+                    width = track.getInteger(MediaFormat.KEY_WIDTH)
+                    height = track.getInteger(MediaFormat.KEY_HEIGHT)
+                    break
+                }
+            }
+            if (videoTrack < 0 || width <= 0 || height <= 0) {
+                throw IllegalStateException("MP4 has no valid video track or dimensions")
+            }
+            extractor.selectTrack(videoTrack)
+            val sampleBuffer = ByteBuffer.allocate(1024 * 1024)
+            var samples = 0
+            while (true) {
+                sampleBuffer.clear()
+                val size = extractor.readSampleData(sampleBuffer, 0)
+                if (size < 0) break
+                if (size > 0) samples++
+                extractor.advance()
+            }
+            if (samples < 1) throw IllegalStateException("MP4 video track contains no readable samples")
+
+            retriever.setDataSource(file.absolutePath)
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
+            val frame = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+            if (durationMs <= 0L || frame == null) {
+                frame?.recycle()
+                throw IllegalStateException("MP4 has no positive duration or decodable video frame")
+            }
+            frame.recycle()
+            return Mp4Validation(file.length(), durationMs, width, height, samples)
+        } catch (error: IllegalStateException) {
+            throw error
+        } catch (error: Exception) {
+            throw IllegalStateException("MP4 validation failed: ${error.message ?: error.javaClass.simpleName}", error)
+        } finally {
+            runCatching { extractor.release() }
+            runCatching { retriever.release() }
+        }
+    }
+
+    internal data class Mp4Validation(
+        val bytes: Long,
+        val durationMs: Long,
+        val width: Int,
+        val height: Int,
+        val videoSamples: Int
+    )
 
     /** Renders a short turntable into an animated GIF. */
     suspend fun exportGif(
@@ -223,16 +327,62 @@ class ExportManager(private val context: Context) {
         context.contentResolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } }
     }
 
+    private fun sha256File(file: File): ByteArray {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest()
+    }
+
     private fun publishVideo(file: File, name: String) {
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, "$name.mp4")
             put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/3DoubleD")
+                put(MediaStore.Video.Media.IS_PENDING, 1)
             }
         }
-        val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return
-        context.contentResolver.openOutputStream(uri)?.use { out -> file.inputStream().use { it.copyTo(out) } }
+        val uri = context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+            ?: throw IllegalStateException("Could not create the MP4 entry in the device gallery")
+        try {
+            val output = context.contentResolver.openOutputStream(uri)
+                ?: throw IllegalStateException("Could not open the gallery MP4 for writing")
+            output.use { out -> file.inputStream().use { input -> input.copyTo(out) } }
+
+            val galleryCopy = File(context.cacheDir, "gallery-verify-${System.nanoTime()}.mp4")
+            try {
+                val input = context.contentResolver.openInputStream(uri)
+                    ?: throw IllegalStateException("Gallery MP4 cannot be read back after saving")
+                input.use { source -> galleryCopy.outputStream().use { target -> source.copyTo(target) } }
+                if (galleryCopy.length() != file.length()) {
+                    throw IllegalStateException("Gallery MP4 size differs from the validated export")
+                }
+                val sourceDigest = sha256File(file)
+                val galleryDigest = sha256File(galleryCopy)
+                if (!sourceDigest.contentEquals(galleryDigest)) {
+                    throw IllegalStateException("Gallery MP4 bytes do not match the validated export")
+                }
+                validateMp4(galleryCopy)
+            } finally {
+                galleryCopy.delete()
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val published = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
+                if (context.contentResolver.update(uri, published, null, null) != 1) {
+                    throw IllegalStateException("Gallery MP4 could not be finalized")
+                }
+            }
+        } catch (failure: Throwable) {
+            runCatching { context.contentResolver.delete(uri, null, null) }
+            throw failure
+        }
     }
 
     fun clearExports() {
